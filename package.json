@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "type": "module",
   "scripts": {
+    "build": "esbuild src/main.js --bundle --outfile=BP/scripts/main.js --format=esm --external:@minecraft/server",
+    "watch": "esbuild src/main.js --bundle --outfile=BP/scripts/main.js --format=esm --external:@minecraft/server --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -13,7 +16,6 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/joshyman-55/MCAddon-TemperatureGUI/issues"
   },

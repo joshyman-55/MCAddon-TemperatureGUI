@@ -1,260 +1,174 @@
-// ── main.js ───────────────────────────────────────────────────────────────────
-// ENTRY POINT — registered in manifest.json as scripts.entry_point.
-// Handles: HUD display, item events, sleep reset, debug stick, main tick loop.
-// All heavy logic is delegated to the imported modules below.
-// ─────────────────────────────────────────────────────────────────────────────
+// src/main.js
+import { world as world4, system } from "@minecraft/server";
 
-import { world, system } from "@minecraft/server";
-import { BIOME_DATA } from "./biomeData.js";
-import { getBiomeKey } from "./biomeDetection.js";
-import { calculateTemperature, toFahrenheit } from "./tempCalculator.js";
-import { getNearestGroundBlocks } from "./blockUtils.js";
-import {
-    playerTemp, playerUV, playerColdTime, playerHeatTime, playerHydration,
-    playerLastBiome, playerUseFahrenheit, SPAWN_TEMP,
-    playerRespawnGrace, RESPAWN_GRACE_TICKS, playerPreDeathTemp,
-    playerFireSpike,
-    ensurePlayerState, clearPlayerState
-} from "./playerState.js";
-import { applyFrostbite, applyHeatstroke } from "./effectsHandler.js";
-import { registerSnowballEffect } from "./snowballEffect.js";
-import { registerFireEnchantEffect } from "./fireEnchantsEffect.js";
+// src/tempCalculator.js
+import { world } from "@minecraft/server";
 
-system.runTimeout(() => {
-    world.sendMessage("§aTemperatureGUI addon installed!");
-}, 100);
-
-registerSnowballEffect();
-registerFireEnchantEffect();
-
-// ── Smooth display temp (separate from simulation temp) ───────────────────────
-// playerTemp = actual simulation value, updated every 20 ticks
-// playerDisplayTemp = what the HUD shows, lerped every tick toward playerTemp
-// This eliminates the "skip every second" visual artifact
-const playerDisplayTemp = new Map();
-
-// ── HUD color helpers ─────────────────────────────────────────────────────────
-
-function getTempColor(c) {
-    if (c <= 0) return "§d"; // purple  — freezing
-    if (c <= 9) return "§b"; // blue    — very cold
-    if (c <= 15) return "§a"; // green   — cool
-    if (c <= 25) return "§e"; // yellow  — comfortable
-    if (c <= 35) return "§6"; // orange  — hot
-    return "§c";              // red     — dangerous
+// src/playerState.js
+var playerTemp = /* @__PURE__ */ new Map();
+var playerUV = /* @__PURE__ */ new Map();
+var playerColdTime = /* @__PURE__ */ new Map();
+var playerHeatTime = /* @__PURE__ */ new Map();
+var playerHydration = /* @__PURE__ */ new Map();
+var playerLastBiome = /* @__PURE__ */ new Map();
+var playerUseFahrenheit = /* @__PURE__ */ new Map();
+var playerRespawnGrace = /* @__PURE__ */ new Map();
+var playerPreDeathTemp = /* @__PURE__ */ new Map();
+var playerFireSpike = /* @__PURE__ */ new Map();
+var SPAWN_TEMP = 18;
+function ensurePlayerState(player) {
+  if (!playerTemp.has(player.id)) playerTemp.set(player.id, SPAWN_TEMP);
+  if (!playerUV.has(player.id)) playerUV.set(player.id, 0);
+  if (!playerColdTime.has(player.id)) playerColdTime.set(player.id, 0);
+  if (!playerHeatTime.has(player.id)) playerHeatTime.set(player.id, 0);
+  if (!playerHydration.has(player.id)) playerHydration.set(player.id, 0);
+  if (!playerLastBiome.has(player.id)) playerLastBiome.set(player.id, "plains");
+  if (!playerRespawnGrace.has(player.id)) playerRespawnGrace.set(player.id, 0);
+  if (!playerPreDeathTemp.has(player.id)) playerPreDeathTemp.set(player.id, null);
+  if (!playerFireSpike.has(player.id)) playerFireSpike.set(player.id, null);
+  if (!playerUseFahrenheit.has(player.id)) {
+    playerUseFahrenheit.set(player.id, false);
+  }
+}
+function clearPlayerState(playerId) {
+  playerTemp.delete(playerId);
+  playerUV.delete(playerId);
+  playerColdTime.delete(playerId);
+  playerHeatTime.delete(playerId);
+  playerHydration.delete(playerId);
+  playerLastBiome.delete(playerId);
+  playerUseFahrenheit.delete(playerId);
+  playerRespawnGrace.delete(playerId);
+  playerPreDeathTemp.delete(playerId);
+  playerFireSpike.delete(playerId);
 }
 
-function getTimeColor(time) {
-    if (time >= 23000 || time < 1000) return "§6";
-    if (time < 11000) return "§e";
-    if (time < 13000) return "§6";
-    return "§9";
+// src/armorDetector.js
+import { EquipmentSlot } from "@minecraft/server";
+
+// src/snowballEffect.js
+import { world as world2 } from "@minecraft/server";
+function registerSnowballEffect() {
+  world2.afterEvents.projectileHitEntity.subscribe((event) => {
+    if (event.projectile?.typeId !== "minecraft:snowball") return;
+    const hit = event.getEntityHit()?.entity;
+    if (!hit || hit.typeId !== "minecraft:player") return;
+    const current = playerTemp.get(hit.id);
+    if (current == void 0) return;
+    const cooled = Math.max(-30, current - 3);
+    playerTemp.set(hit.id, cooled);
+    const useFahrenheit = playerUseFahrenheit.get(hit.id) ?? false;
+    const displayTemp = useFahrenheit ? Math.round(cooled * 9 / 5 + 32) : Math.round(cooled);
+    const unit = useFahrenheit ? "\xB0F" : "\xB0C";
+    hit.sendMessage(`\xA7b\u2744 Snowball hit! Temp dropped to ${displayTemp}${unit}`);
+  });
 }
 
-function getTimeString(time) {
-    const totalMinutes = ((time + 6000) % 24000) / 24000 * 1440;
-    let hours = Math.floor(totalMinutes / 60) % 24;
-    const mins = Math.floor(totalMinutes % 60);
-    const ampm = hours >= 12 ? "PM" : "AM";
-    hours = hours % 12 || 12;
-    return `${hours}:${mins < 10 ? "0" : ""}${mins} ${ampm}`;
-}
-
-// ── Events ────────────────────────────────────────────────────────────────────
-
-world.afterEvents.playerSpawn.subscribe((event) => {
-    const isNew = !playerTemp.has(event.player.id);
-    ensurePlayerState(event.player);
-
-    const biomeKey = getBiomeKey(event.player);
-    const biome = BIOME_DATA[biomeKey] ?? BIOME_DATA.plains;
-
-    if (isNew) {
-        // First ever join — start at biome default
-        playerTemp.set(event.player.id, biome.default);
-        playerDisplayTemp.set(event.player.id, biome.default);
-    } else if (!event.initialSpawn) {
-        // Respawn after death — use safe category temp
-        const hotBiomes = ["desert", "nether", "savanna", "badlands", "jungle"];
-        const coldBiomes = ["taiga", "snowy", "frozen", "hills"];
-        const specialBiomes = ["end", "deepdark"];
-
-        let spawnTemp;
-        if (hotBiomes.includes(biomeKey)) spawnTemp = 28;
-        else if (coldBiomes.includes(biomeKey)) spawnTemp = 5;
-        else if (specialBiomes.includes(biomeKey)) spawnTemp = 10;
-        else spawnTemp = 18;
-
-        playerTemp.set(event.player.id, spawnTemp);
-        playerDisplayTemp.set(event.player.id, spawnTemp);
-        playerUV.set(event.player.id, 0);
-        playerColdTime.set(event.player.id, 0);
-        playerHeatTime.set(event.player.id, 0);
-        playerRespawnGrace.set(event.player.id, RESPAWN_GRACE_TICKS);
-    }
-    // else: returning player (initialSpawn=true but already has state) — leave temp alone
-});
-
-world.afterEvents.playerLeave.subscribe((event) => {
-    clearPlayerState(event.playerId);
-    playerDisplayTemp.delete(event.playerId);
-});
-
-// Save temp and biome before death — fire and lava deaths don't restore
-const FIRE_LAVA_CAUSES = ["fire", "fireTick", "lava", "magma", "onFire"];
-world.afterEvents.entityDie.subscribe((event) => {
-    const entity = event.deadEntity;
+// src/fireEnchantsEffect.js
+import { world as world3, EquipmentSlot as EquipmentSlot2 } from "@minecraft/server";
+var FIRE_SPIKE_CAPS = {
+  flame_1: 90,
+  fire_aspect_1: 85,
+  fire_aspect_2: 100,
+  ghast_fireball: 95
+};
+var SPIKE_DURATION = 8;
+function registerFireEnchantEffect() {
+  world3.afterEvents.entityHurt.subscribe((event) => {
+    const entity = event.hurtEntity;
     if (entity.typeId !== "minecraft:player") return;
     const cause = event.damageSource?.cause ?? "";
-    if (FIRE_LAVA_CAUSES.includes(cause)) {
-        // Fire/lava death — null means no snap on grace end
-        playerPreDeathTemp.set(entity.id, null);
-    } else {
-        // Save temp AND biome at time of death
-        playerPreDeathTemp.set(entity.id, {
-            temp: playerTemp.get(entity.id) ?? null,
-            biome: playerLastBiome.get(entity.id) ?? null
-        });
+    const damagingEntity = event.damageSource?.damagingEntity;
+    if (cause !== "entityAttack" || damagingEntity?.typeId !== "minecraft:player") return;
+    let spikeCap = null;
+    try {
+      const attackEquip = damagingEntity.getComponent("minecraft:equippable");
+      const mainhand = attackEquip?.getEquipment(EquipmentSlot2.Mainhand);
+      if (mainhand) {
+        const enchants = mainhand.getComponent("minecraft:enchantable");
+        const level = enchants?.getEnchantment("fire_aspect")?.level ?? 0;
+        if (level === 2) spikeCap = FIRE_SPIKE_CAPS.fire_aspect_2;
+        else if (level === 1) spikeCap = FIRE_SPIKE_CAPS.fire_aspect_1;
+      }
+    } catch {
     }
-});
-
-// Sleeping resets temperature to a comfortable biome-appropriate value
-try {
-    world.afterEvents.playerSleepStateChange.subscribe((event) => {
-        if (!event.isSleeping) return;
-        const player = event.player;
-        const key = getBiomeKey(player);
-        const biome = BIOME_DATA[key] ?? BIOME_DATA.plains;
-        const reset = Math.max(biome.min, Math.min(biome.max,
-            biome.default + (Math.random() * 10 - 5)));
-        playerTemp.set(player.id, reset);
-        playerDisplayTemp.set(player.id, reset); // snap display on sleep too
-        playerUV.set(player.id, 0);
-        playerColdTime.set(player.id, 0);
-        playerHeatTime.set(player.id, 0);
-    });
-} catch (e) {
-    world.sendMessage("§e[Warn] playerSleepStateChange unavailable: " + e);
+    if (spikeCap === null) return;
+    const currentTemp = playerTemp.get(entity.id) ?? 18;
+    const jumpTarget = spikeCap - 20;
+    if (currentTemp < jumpTarget) {
+      playerTemp.set(entity.id, jumpTarget);
+    }
+    const existing = playerFireSpike.get(entity.id);
+    if (!existing || spikeCap >= existing.cap) {
+      playerFireSpike.set(entity.id, { cap: spikeCap, ticks: SPIKE_DURATION });
+    }
+  });
+  world3.afterEvents.projectileHitEntity.subscribe((event) => {
+    if (event.projectile?.typeId !== "minecraft:arrow") return;
+    const hit = event.getEntityHit()?.entity;
+    if (!hit || hit.typeId !== "minecraft:player") return;
+    try {
+      const shooter = event.source;
+      if (!shooter) return;
+      const equip = shooter.getComponent("minecraft:equippable");
+      const bow = equip?.getEquipment(EquipmentSlot2.Mainhand);
+      if (!bow) return;
+      const enchants = bow.getComponent("minecraft:enchantable");
+      const hasFlame = enchants?.hasEnchantment("flame");
+      if (!hasFlame) return;
+    } catch {
+      return;
+    }
+    const current = playerTemp.get(hit.id) ?? 18;
+    const jumpTarget = 70;
+    if (current < jumpTarget) {
+      playerTemp.set(hit.id, jumpTarget);
+    }
+    const existing = playerFireSpike.get(hit.id);
+    if (!existing || FIRE_SPIKE_CAPS.flame_1 >= existing.cap) {
+      playerFireSpike.set(hit.id, { cap: FIRE_SPIKE_CAPS.flame_1, ticks: SPIKE_DURATION });
+    }
+  });
+  world3.afterEvents.projectileHitEntity.subscribe((event) => {
+    if (event.projectile?.typeId !== "minecraft:fireball" && event.projectile?.typeId !== "minecraft:ghast_fireball" && event.projectile?.typeId !== "minecraft:small_fireball") return;
+    const hit = event.getEntityHit()?.entity;
+    if (!hit || hit.typeId !== "minecraft:player") return;
+    const current = playerTemp.get(hit.id) ?? 18;
+    const jumpTarget = 75;
+    if (current < jumpTarget) {
+      playerTemp.set(hit.id, jumpTarget);
+    }
+    const existing = playerFireSpike.get(hit.id);
+    if (!existing || FIRE_SPIKE_CAPS.ghast_fireball >= existing.cap) {
+      playerFireSpike.set(hit.id, { cap: FIRE_SPIKE_CAPS.ghast_fireball, ticks: SPIKE_DURATION });
+    }
+  });
 }
 
-world.afterEvents.itemUse.subscribe((event) => {
-    const item = event.itemStack;
-    const source = event.source;
-
-    // Drinking water / potions adds hydration charges (max 3)
-    if (item?.typeId === "minecraft:potion" ||
-        item?.typeId === "minecraft:water_bucket" ||
-        item?.typeId === "minecraft:glass_bottle") {
-        if (!source || !playerHydration.has(source.id)) return;
-        const charges = playerHydration.get(source.id) ?? 0;
-        if (charges < 3) playerHydration.set(source.id, charges + 1);
-    }
-});
-
-// ── Main tick ─────────────────────────────────────────────────────────────────
-
-let tickCounter = 0;
-
-system.runInterval(() => {
+// src/main.js
+world4.afterEvents.worldLoad.subscribe(() => {
+  world4.sendMessage("\xA7a26.5 TemperatureGUI loaded!");
+  registerSnowballEffect();
+  registerFireEnchantEffect();
+  world4.afterEvents.playerSpawn.subscribe((event) => {
+    ensurePlayerState(event.player);
+  });
+  world4.afterEvents.playerLeave.subscribe((event) => {
+    clearPlayerState(event.playerId);
+  });
+  let tickCounter = 0;
+  system.runInterval(() => {
     tickCounter++;
-    const doHeavyCalc = (tickCounter % 20 === 0);
-
-    for (const player of world.getAllPlayers()) {
+    const doHeavyCalc = tickCounter % 20 === 0;
+    for (const player of world4.getAllPlayers()) {
+      try {
+        ensurePlayerState(player);
+      } catch (e) {
         try {
-            ensurePlayerState(player);
-            if (!playerDisplayTemp.has(player.id)) {
-                playerDisplayTemp.set(player.id, playerTemp.get(player.id) ?? SPAWN_TEMP);
-            }
-
-            const time = world.getTimeOfDay();
-            const simTemp = playerTemp.get(player.id);
-            const useFahrenheit = playerUseFahrenheit.get(player.id);
-
-            // ── Smooth HUD display — lerps every tick toward simulation temp ──
-            // Fast enough to feel responsive, slow enough to avoid skipping
-            const prevDisplay = playerDisplayTemp.get(player.id);
-            const smoothDisplay = prevDisplay + (simTemp - prevDisplay) * 0.12;
-            playerDisplayTemp.set(player.id, smoothDisplay);
-
-            const displayValue = useFahrenheit
-                ? Math.round(toFahrenheit(smoothDisplay))
-                : Math.round(smoothDisplay);
-            const unit = useFahrenheit ? "°F" : "°C";
-
-            player.onScreenDisplay.setActionBar(
-                `§fTemp: ${getTempColor(smoothDisplay)}${displayValue}${unit}  ` +
-                `${getTimeColor(time)}${getTimeString(time)}`
-            );
-
-            if (!doHeavyCalc) continue;
-
-            // Unit toggle using tags
-
-            const hasF = player.hasTag("tempunit_f");
-            const hasC = player.hasTag("tempunit_c");
-            if (hasF) playerUseFahrenheit.set(player.id, true);
-            else if (hasC) playerUseFahrenheit.set(player.id, false);
-
-            // ── Temperature calculation — once per second ─────────────────────
-            const uv = playerUV.get(player.id);
-            const lastBiome = playerLastBiome.get(player.id);
-
-            const result = calculateTemperature(player, simTemp, uv, lastBiome, time);
-
-            playerTemp.set(player.id, result.newTemp);
-            playerUV.set(player.id, result.newUV);
-            if (lastBiome !== result.biomeKey) {
-                playerLastBiome.set(player.id, result.biomeKey);
-            }
-
-            const displayC = Math.round(result.newTemp);
-
-            // ── Effects & damage ──────────────────────────────────────────────
-            applyFrostbite(player, displayC);
-            applyHeatstroke(player, displayC);
-
-        } catch (e) {
-            try {
-                player.onScreenDisplay.setActionBar(`§cError: ${e.message || e}`);
-            } catch { }
+          player.onScreenDisplay.setActionBar(`\xA7cError: ${e.message || e}`);
+        } catch {
         }
+      }
     }
-}, 1);
-
-// ── Debug stick ───────────────────────────────────────────────────────────────
-// Right-click any block with a stick to print full debug info to chat.
-
-world.beforeEvents.itemUseOn.subscribe((event) => {
-    if (event.itemStack.typeId !== "minecraft:stick") return;
-    const player = event.source;
-    if (!player || !playerTemp.has(player.id)) return;
-
-    const px = Math.floor(player.location.x);
-    const py = Math.floor(player.location.y);
-    const pz = Math.floor(player.location.z);
-    const blockAt = player.dimension.getBlock({ x: px, y: py, z: pz });
-    const blockBelow = player.dimension.getBlock({ x: px, y: py - 1, z: pz });
-
-    const { foundIds, groundY } = getNearestGroundBlocks(player, 5, 50);
-    const foundList = [...foundIds].slice(0, 8).join(", ");
-
-    let rawBiome = "unavailable";
-    try { rawBiome = player.dimension.getBiome(player.location).id ?? "unknown"; } catch { }
-
-    player.sendMessage(
-        `§b[DEBUG] Biome: ${getBiomeKey(player)} | ` +
-        `Temp: ${Math.round(playerTemp.get(player.id))}°C | Y: ${py}`
-    );
-    player.sendMessage(`§e[DEBUG] rawBiome: ${rawBiome}`);
-    player.sendMessage(
-        `§7[DEBUG] blockAt: ${blockAt?.typeId} | blockBelow: ${blockBelow?.typeId}`
-    );
-    player.sendMessage(
-        `§a[DEBUG] groundY: ${groundY} | found: ${foundList}`
-    );
-    const preDeathData = playerPreDeathTemp.get(player.id);
-    player.sendMessage(
-        `§d[DEBUG] Grace: ${playerRespawnGrace.get(player.id) ?? 0} | ` +
-        `PreDeath: ${preDeathData ? `${Math.round(preDeathData.temp)}°C (${preDeathData.biome})` : "none"}`
-    );
+  }, 1);
 });
