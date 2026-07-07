@@ -1,0 +1,44 @@
+{
+	"type": "minecraftBedrock",
+	"name": "TemperatureGUI",
+	"namespace": "TempGUI",
+	"authors": [
+		"Joshyman55"
+	],
+	"targetVersion": "1.26.0",
+	"description": "A weather where you can feel the temperature while playing a game!",
+	"experimentalGameplay": {
+		"upcomingCreatorFeatures": false,
+		"experimentalCreatorCameraFeatures": false,
+		"enableGameTestFramework": true,
+		"renderDragonFeatures": false,
+		"educationEdition": false
+	},
+	"bdsProject": false,
+	"packs": {
+		"behaviorPack": "./BP",
+		"resourcePack": "./RP"
+	},
+	"worlds": [
+		"./worlds/*"
+	],
+	"compiler": {
+		"plugins": [
+			"generatorScripts",
+			"typeScript",
+			"entityIdentifierAlias",
+			"customEntityComponents",
+			"customItemComponents",
+			"customBlockComponents",
+			"customCommands",
+			"moLang",
+			"formatVersionCorrection",
+			[
+				"simpleRewrite",
+				{
+					"packName": "TemperatureGUI"
+				}
+			]
+		]
+	}
+}
