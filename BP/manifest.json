@@ -24,7 +24,7 @@
 		"uuid": "24f81686-7e2d-4b00-83cb-80cbac43b76c",
 		"version": [
 			26,
-			4,
+			5,
 			0
 		]
 	},
@@ -34,7 +34,7 @@
 			"uuid": "c6924c78-b1f5-4ea7-b2ad-9f701bf2d2e8",
 			"version": [
 				26,
-				4,
+				5,
 				0
 			]
 		},
@@ -44,7 +44,7 @@
 			"uuid": "a0b1f362-ba2e-4c57-8b8b-11d1b9f2fa11",
 			"version": [
 				26,
-				4,
+				5,
 				0
 			],
 			"entry": "scripts/main.js"
@@ -53,7 +53,7 @@
 	"dependencies": [
 		{
 			"module_name": "@minecraft/server",
-			"version": "1.14.0"
+			"version": "2.8.0"
 		}
 	]
 }
