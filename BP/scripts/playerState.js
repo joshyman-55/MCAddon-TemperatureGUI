@@ -33,6 +33,37 @@ export const RESPAWN_GRACE_TICKS = 10; // 10 heavy-calc ticks = 10 seconds
 // ── Comfortable spawn temperature ─────────────────────────────────────────────
 export const SPAWN_TEMP = 18;
 
+// ── Persistence keys ──────────────────────────────────────────────────────────
+const PERSIST_KEY = "tempgui:persisted";
+
+// ──  Save the 3 persistent fields to a dynamic property ───────────────────────
+export function savePersistedState(player) {
+    try {
+        const data = {
+            temp: playerTemp.get(player.id) ?? SPAWN_TEMP,
+            useFahrenheit: playerUseFahrenheit.get(player.id) ?? false,
+            lastBiome: playerLastBiome.get(player.id) ?? "plains"
+        };
+        player.setDynamicProperty(PERSIST_KEY, JSON.stringify(data));
+    } catch { }
+}
+
+// ── Load the 3 persistent fields from a dynamic property, if present ──────────
+
+export function loadPersistedState(player) { 
+    try {
+        const raw = player.getDynamicProperty(PERSIST_KEY);
+        if (typeof raw !== "string") return;
+        const data = JSON.parse(raw);
+        if (typeof data.temp === "number") playerTemp.set(player.id, data.temp);
+        if (typeof data.useFahrenheit === "boolean") playerUseFahrenheit.set(player.id, data.useFahrenheit);
+        if (typeof data.lastBiome === "string") playerLastBiome.set(player.id, data.lastBiome);
+        return true;
+    } catch { 
+        return false;
+    }
+}
+
 // ── Initialize state for a player if missing ──────────────────────────────────
 
 export function ensurePlayerState(player) {
