@@ -13,7 +13,8 @@ import {
   playerLastBiome, playerUseFahrenheit, SPAWN_TEMP,
   playerRespawnGrace, RESPAWN_GRACE_TICKS, playerPreDeathTemp,
   playerFireSpike,
-  ensurePlayerState, clearPlayerState
+  ensurePlayerState, clearPlayerState,
+  savePersistedState, loadPersistedState
 } from "./playerState.js";
 import { applyFrostbite, applyHeatstroke } from "./effectsHandler.js";
 import { registerSnowballEffect } from "./snowballEffect.js";
@@ -63,6 +64,10 @@ world.afterEvents.worldLoad.subscribe(() => {
   world.afterEvents.playerSpawn.subscribe((event) => {
     const isNew = !playerTemp.has(event.player.id);
     ensurePlayerState(event.player);
+    
+    if (isNew) {
+      loadPersistedState(event.player);
+    }
 
     const biomeKey = getBiomeKey(event.player);
     const biome = BIOME_DATA[biomeKey] ?? BIOME_DATA.plains;
