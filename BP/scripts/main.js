@@ -19,12 +19,11 @@ import { applyFrostbite, applyHeatstroke } from "./effectsHandler.js";
 import { registerSnowballEffect } from "./snowballEffect.js";
 import { registerFireEnchantEffect } from "./fireEnchantsEffect.js";
 
-system.runTimeout(() => {
-    world.sendMessage("§aTemperatureGUI addon installed!");
-}, 100);
+world.afterEvents.worldLoad.subscribe(() => {
+    world.sendMessage("§a[TempGUI] v26.5 loaded!");
 
-registerSnowballEffect();
-registerFireEnchantEffect();
+    registerSnowballEffect();
+    registerFireEnchantEffect();
 
 // ── Smooth display temp (separate from simulation temp) ───────────────────────
 // playerTemp = actual simulation value, updated every 20 ticks
@@ -256,4 +255,5 @@ world.beforeEvents.itemUseOn.subscribe((event) => {
         `§d[DEBUG] Grace: ${playerRespawnGrace.get(player.id) ?? 0} | ` +
         `PreDeath: ${preDeathData ? `${Math.round(preDeathData.temp)}°C (${preDeathData.biome})` : "none"}`
     );
+});
 });
