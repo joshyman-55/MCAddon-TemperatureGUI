@@ -22,6 +22,10 @@ export function toFahrenheit(c) {
     return (c * 9 / 5) + 32;
 }
 
+export function roundToTenth(value) {
+    return Math.round(value * 10) / 10;
+}
+
 // Full 24-hour sine curve.
 // Returns +1 at midday (MC time 6000), -1 at midnight (MC time 18000).
 // Gradual rise from sunrise, gradual fall through sunset into night.
@@ -100,9 +104,10 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
     else if (onMagma) target = Math.max(target, 75);
 
     // ── Weather modifier ──────────────────────────────────────────────────────
+    let weather = null;
     if (!isSpecialDim && !inLava && !nearLava && !onFire) {
         try {
-            const weather = player.dimension.weather ?? world.getWeather?.() ?? null;
+            weather = player.dimension.weather ?? world.getWeather?.() ?? null;
             if (weather === "thunder") target -= 10;
             else if (weather === "rain") {
                 target -= biome.default <= 0 ? 14 : 6;
@@ -111,7 +116,8 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
     }
 
     // ── Indoors moderates temperature toward biome-aware comfort ──────────────
-    if (isIndoors(player) && !inLava && !nearLava && !onFire && !onMagma && !inWater) {
+    const indoors = isIndoors(player);
+    if (indoors && !inLava && !nearLava && !onFire && !onMagma && !inWater) {
         const comfortTemp = 22;
         const indoorTarget = biome.default > comfortTemp
             ? Math.max(comfortTemp, biome.default * 0.75)
@@ -180,7 +186,7 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
 
         // Airborne — faster since no ground insulation
         const isAirborne = !inWater && !inLava && !nearLava &&
-            !onFire && !onMagma && !isIndoors(player);
+            !onFire && !onMagma && !indoors;
         if (isAirborne) {
             const dist = getDistanceToGround(player);
             if (dist >= 10) lerpRate = 0.10;
@@ -230,6 +236,7 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
                         inLava, nearLava, onFire, onMagma, inWater, campfire,
                         inPowderSnow, buriedInSnow, onSnowLayer,
                         onIce, onPackedIce, onBlueIce,
+                        weather, indoors,
                     };
                 } else {
                     const diff = preDeath.temp - current;
@@ -241,6 +248,7 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
                         inLava, nearLava, onFire, onMagma, inWater, campfire,
                         inPowderSnow, buriedInSnow, onSnowLayer,
                         onIce, onPackedIce, onBlueIce,
+                        weather, indoors,
                     };
                 }
             }
@@ -260,6 +268,7 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
         inLava, nearLava, onFire, onMagma, inWater, campfire,
         inPowderSnow, buriedInSnow, onSnowLayer,
         onIce, onPackedIce, onBlueIce,
+        weather, indoors,
     };
 }
 
@@ -269,7 +278,38 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
 // this is what frostbite/heatstroke will check once step 8 switches over.
 
 export function calculateBodyTemp(currentBodyTemp, actualTemp, lerpRate) {
-    return currentBodyTemp + (actualTemp - currentBodyTemp) * lerpRate;
+    const lerped = currentBodyTemp + (actualTemp - currentBodyTemp) * lerpRate;
+    return Math.max(32, Math.min(43, lerped)); // psyiological range only
+}
+
+// ── Humidity target ──────────────────────────────────────────────────────────
+// Computes the humidity a player's environment is currently "pulling toward."
+// Called once per heavy-calc tick using result.weather/result.indoors from
+// calculateTemperature(); the result feeds calculateHumidity() below, which
+// lerps the stored value toward this target instead of snapping.
+
+export function getHumidityTarget(biomeKey, inWater, weather, indoors) {
+    if (inWater) return 100;
+
+    const HUMID_BIOMES = ["jungle", "swamp", "mushroom", "lush", "warmocean", "ocean"];
+    const DRY_BIOMES = ["desert", "badlands", "savanna", "nether"];
+
+    let target = 50; // neutral baseline
+    if (HUMID_BIOMES.includes(biomeKey)) target = 80;
+    else if (DRY_BIOMES.includes(biomeKey)) target = 20;
+
+    if (weather === "rain") target = Math.max(target, 85);
+    else if (weather === "thunder") target = Math.max(target, 90);
+
+    if (indoors) target = 50 + (target - 50) * 0.4; // indoors moderates toward neutral
+
+    return Math.max(0, Math.min(100, target));
+}
+
+// ── Humidity lerp ─────────────────────────────────────────────────────────────
+// Same lag pattern as calculateBodyTemp() — drifts toward target, doesn't snap.
+export function calculateHumidity(currentHumidity, target, lerpRate) {
+    return currentHumidity + (target - currentHumidity) * lerpRate;
 }
 
 // ── Feels Like ────────────────────────────────────────────────────────────────
@@ -278,7 +318,16 @@ export function calculateBodyTemp(currentBodyTemp, actualTemp, lerpRate) {
 // humidity: 0–100 (%). wetness: 0–1 (0 = dry, 1 = fully soaked).
 // Placeholder formula until step 5 wires in a real humidity calculation —
 // humidity is currently passed in as a flat 50 from main.js.
-export function calculateFeelsLike(actualTemp, humidity, wetness) {
-    // Saved
+
+export function calculateFeelsLike(actualTemp, humidity, wetness = 0) {
+    let feelsLike = actualTemp;
+    const humidityOffset = (humidity - 50) / 50; 
+    if (actualTemp >= 25) {
+        feelsLike += humidityOffset * 4;
+    } else if (actualTemp <= 5) {
+        feelsLike -= Math.max(0, -humidityOffset) * 2;
+    }
+
+    feelsLike -= wetness * 6;
     return feelsLike;
 }

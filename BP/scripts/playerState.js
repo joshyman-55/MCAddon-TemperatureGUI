@@ -15,6 +15,8 @@ export const playerTemp = new Map();
 export const playerBodyTemp = new Map();
 // Accumulated UV index (0–10)
 export const playerUV = new Map();
+// Ambient humidity (0–100%), lerps toward a biome/weather-derived target
+export const playerHumidity = new Map();
 // Ticks spent in dangerous cold (counts toward frostbite)
 export const playerColdTime = new Map();
 // Ticks spent in dangerous heat (counts toward heatstroke)
@@ -41,6 +43,7 @@ export const FROSTBITE_THRESHOLD = 1000;
 export const HEATSTROKE_THRESHOLD = 2000;
 export const RESPAWN_GRACE_TICKS = 10; // 10 heavy-calc ticks = 10 seconds
 export const BODY_TEMP_LERP_RATE = 0.02; // slower than ambient lerp — body catches up gradually
+export const HUMIDITY_LERP_RATE = 0.03; // similar pace to Body Temp — humidity drifts, doesn't snap
 export const THIRST_MAX = 20; // 20 points = 10 droplet icons
 export const THIRST_EXHAUSTION_THRESHOLD = 4.0; // matches vanilla hunger's threshold
 export const EXHAUSTION_SPRINT = 0.1;     // per tick while sprinting
@@ -87,7 +90,8 @@ export function loadPersistedState(player) {
 
 export function ensurePlayerState(player) {
     if (!playerTemp.has(player.id)) playerTemp.set(player.id, SPAWN_TEMP);
-    if (!playerBodyTemp.has(player.id)) playerBodyTemp.set(player.id, SPAWN_TEMP);
+    if (!playerBodyTemp.has(player.id)) playerBodyTemp.set(player.id, 37);
+    if (!playerHumidity.has(player.id)) playerHumidity.set(player.id, 50);
     if (!playerUV.has(player.id)) playerUV.set(player.id, 0);
     if (!playerThirst.has(player.id)) playerThirst.set(player.id, THIRST_MAX);
     if (!playerThirstExhaustion.has(player.id)) playerThirstExhaustion.set(player.id, 0);
@@ -109,6 +113,7 @@ export function ensurePlayerState(player) {
 export function clearPlayerState(playerId) {
     playerTemp.delete(playerId);
     playerBodyTemp.delete(playerId);
+    playerHumidity.delete(playerId);
     playerUV.delete(playerId);
     playerThirst.delete(playerId);
     playerThirstExhaustion.delete(playerId);

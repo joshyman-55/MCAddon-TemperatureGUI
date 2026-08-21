@@ -6,16 +6,16 @@
 import { world, system } from "@minecraft/server";
 import { BIOME_DATA } from "./biomeData.js";
 import { getBiomeKey } from "./biomeDetection.js";
-import { calculateTemperature, calculateBodyTemp, toFahrenheit } from "./tempCalculator.js";
+import { calculateTemperature, calculateBodyTemp, getHumidityTarget, calculateHumidity, calculateFeelsLike, toFahrenheit, roundToTenth } from "./tempCalculator.js";
 import { getNearestGroundBlocks } from "./blockUtils.js";
 import {
-  playerTemp, playerBodyTemp, playerUV, playerColdTime, playerHeatTime, playerHydration,
+  playerTemp, playerBodyTemp, playerHumidity,playerUV, playerColdTime, playerHeatTime, playerHydration,
   playerThirst, playerThirstExhaustion, THIRST_MAX, THIRST_EXHAUSTION_THRESHOLD,
   EXHAUSTION_SPRINT, EXHAUSTION_JUMP, EXHAUSTION_SPRINT_JUMP,
   EXHAUSTION_MINE_BLOCK, EXHAUSTION_PER_DAMAGE,
   playerLastBiome, playerUseFahrenheit, SPAWN_TEMP,
   playerRespawnGrace, RESPAWN_GRACE_TICKS, playerPreDeathTemp,
-  BODY_TEMP_LERP_RATE,
+  BODY_TEMP_LERP_RATE, HUMIDITY_LERP_RATE,
   playerFireSpike,
   ensurePlayerState, clearPlayerState,
   savePersistedState, loadPersistedState
@@ -35,6 +35,7 @@ world.afterEvents.worldLoad.subscribe(() => {
   // playerDisplayTemp = what the HUD shows, lerped every tick toward playerTemp
   // This eliminates the "skip every second" visual artifact
   const playerDisplayTemp = new Map();
+  const playerLastWeather = new Map();
 
   // ── HUD color helpers ─────────────────────────────────────────────────────────
 
@@ -45,6 +46,12 @@ world.afterEvents.worldLoad.subscribe(() => {
     if (c <= 25) return "§e"; // yellow  — warm
     if (c <= 35) return "§6"; // orange  — hot
     return "§c";              // red     — dangerous
+  }
+
+  function getWeatherString(weather) {
+    if (weather === "thunder") return "§8Thunder";
+    if (weather === "rain") return "§9Rain";
+    return "§fClear";
   }
 
   function getTimeColor(time) {
@@ -221,10 +228,17 @@ world.afterEvents.worldLoad.subscribe(() => {
         const unit = useFahrenheit ? "°F" : "°C";
         const thirstDisplay = playerThirst.get(player.id) ?? THIRST_MAX;
 
+        const humidityValue = playerHumidity.get(player.id) ?? 50;
+        const feelsLikeValue = calculateFeelsLike(smoothDisplay, humidityValue, 0);
+        const feelsLikeDisplay = useFahrenheit
+          ? Math.round(toFahrenheit(feelsLikeValue))
+          : Math.round(feelsLikeValue);
+          const weatherValue = playerLastWeather.get(player.id) ?? null;
+
         player.onScreenDisplay.setActionBar(
-          `§fTemp: ${getTempColor(smoothDisplay)}${displayValue}${unit}  ` +
-          `${getTimeColor(time)}${getTimeString(time)}  ` +
-          `§bThirst: ${thirstDisplay}/${THIRST_MAX}`
+          `§fTemp: ${getTempColor(smoothDisplay)}${displayValue}${unit} §7(Feels ${feelsLikeDisplay}${unit})  ` +
+          `${getTimeColor(time)}${getTimeString(time)}\n` +
+          `§bThirst: ${thirstDisplay}/${THIRST_MAX}  §3Humidity: ${Math.round(humidityValue)}%  ${getWeatherString(weatherValue)}`
         );
 
         if (!doHeavyCalc) continue;
@@ -249,15 +263,27 @@ world.afterEvents.worldLoad.subscribe(() => {
         }
 
         // ── Body Temp — lags behind Actual Temp (result.newTemp) ──────────
-         const currentBodyTemp = playerBodyTemp.get(player.id) ?? result.newTemp;
+        const currentBodyTemp = playerBodyTemp.get(player.id) ?? 37;
         const newBodyTemp = calculateBodyTemp(currentBodyTemp, result.newTemp, BODY_TEMP_LERP_RATE);
         playerBodyTemp.set(player.id, newBodyTemp);
 
+        // ── Humidity — lags toward a biome/weather/indoor target ──────────
+        const humidityTarget = getHumidityTarget(result.biomeKey, result.inWater, result.weather, result.indoors);
+        const currentHumidity = playerHumidity.get(player.id) ?? humidityTarget;
+        const newHumidity = calculateHumidity(currentHumidity, humidityTarget, HUMIDITY_LERP_RATE);
+        playerHumidity.set(player.id, newHumidity);
+        playerLastWeather.set(player.id, result.weather);
+
+        // ── Feels Like (heavy-calc copy, unused for display) — kept for
+        // parity/logging; the action bar recomputes its own every tick
+        const feelsLike = calculateFeelsLike(result.newTemp, newHumidity, 0);
+
         const displayC = Math.round(result.newTemp);
+        const bodyC = roundToTenth(newBodyTemp);
 
         // ── Effects & damage ──────────────────────────────────────────────
-        applyFrostbite(player, displayC);
-        applyHeatstroke(player, displayC);
+        applyFrostbite(player, bodyC);
+        applyHeatstroke(player, bodyC);
 
       } catch (e) {
         try {
