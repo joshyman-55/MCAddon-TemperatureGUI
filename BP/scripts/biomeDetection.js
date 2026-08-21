@@ -7,7 +7,7 @@
 
 // ── Native biome detection (primary) ─────────────────────────────────────────
 
-export function getBiomeKey(player) {
+export function getBiomeKey(player, lastBiomeKey = "plains") {
     const dimId = player.dimension.id;
     if (dimId === "minecraft:nether") return "nether";
     if (dimId === "minecraft:the_end") return "end";
@@ -72,10 +72,10 @@ export function getBiomeKey(player) {
             "minecraft:river", "minecraft:frozen_river"].includes(id)) return "plains";
 
         // Unknown biome ID — fall back to block voting
-        return "plains";
+        return lastBiomeKey;
 
     } catch {
         // getBiome() not available — fall back to block voting
-        return "plains";
+        return lastBiomeKey;
     }
 }

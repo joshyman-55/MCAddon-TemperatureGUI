@@ -4,8 +4,15 @@
 // Imported by: main.js, effectsHandler.js
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Current temperature (°C)
+// ── Actual Temperature (°C) ────────────────────────────────────────────────
+// Raw environmental temp — biome + altitude + weather + hazards.
+// One of three values in the 26.5 temp model: Actual → Body → Feels Like.
 export const playerTemp = new Map();
+// ── Body Temperature (°C) ──────────────────────────────────────────────────
+// Persistent value that lags behind Actual Temp (later: Feels Like) via a
+// slow lerp instead of snapping instantly. This is what frostbite/heatstroke
+// should check once effectsHandler.js is switched over (checklist step 8).
+export const playerBodyTemp = new Map();
 // Accumulated UV index (0–10)
 export const playerUV = new Map();
 // Ticks spent in dangerous cold (counts toward frostbite)
@@ -14,6 +21,10 @@ export const playerColdTime = new Map();
 export const playerHeatTime = new Map();
 // Hydration charges (0–3); consumed while overheating
 export const playerHydration = new Map();
+// Thirst level (0–20, mirrors hunger bar scale — 2 points per droplet icon)
+export const playerThirst = new Map();
+// Exhaustion accumulator for thirst (mirrors hunger's exhaustion mechanic)
+export const playerThirstExhaustion = new Map();
 // Last detected biome key (used to compute lerp speed on biome transitions)
 export const playerLastBiome = new Map();
 // Display preference — false = °C, true = °F
@@ -29,6 +40,14 @@ export const playerFireSpike = new Map();
 export const FROSTBITE_THRESHOLD = 1000;
 export const HEATSTROKE_THRESHOLD = 2000;
 export const RESPAWN_GRACE_TICKS = 10; // 10 heavy-calc ticks = 10 seconds
+export const BODY_TEMP_LERP_RATE = 0.02; // slower than ambient lerp — body catches up gradually
+export const THIRST_MAX = 20; // 20 points = 10 droplet icons
+export const THIRST_EXHAUSTION_THRESHOLD = 4.0; // matches vanilla hunger's threshold
+export const EXHAUSTION_SPRINT = 0.1;     // per tick while sprinting
+export const EXHAUSTION_JUMP = 0.2;
+export const EXHAUSTION_SPRINT_JUMP = 0.8;
+export const EXHAUSTION_MINE_BLOCK = 0.005;
+export const EXHAUSTION_PER_DAMAGE = 0.1; // multiplied by damage amount
 
 // ── Comfortable spawn temperature ─────────────────────────────────────────────
 export const SPAWN_TEMP = 18;
@@ -68,7 +87,10 @@ export function loadPersistedState(player) {
 
 export function ensurePlayerState(player) {
     if (!playerTemp.has(player.id)) playerTemp.set(player.id, SPAWN_TEMP);
+    if (!playerBodyTemp.has(player.id)) playerBodyTemp.set(player.id, SPAWN_TEMP);
     if (!playerUV.has(player.id)) playerUV.set(player.id, 0);
+    if (!playerThirst.has(player.id)) playerThirst.set(player.id, THIRST_MAX);
+    if (!playerThirstExhaustion.has(player.id)) playerThirstExhaustion.set(player.id, 0);
     if (!playerColdTime.has(player.id)) playerColdTime.set(player.id, 0);
     if (!playerHeatTime.has(player.id)) playerHeatTime.set(player.id, 0);
     if (!playerHydration.has(player.id)) playerHydration.set(player.id, 0);
@@ -86,7 +108,10 @@ export function ensurePlayerState(player) {
 
 export function clearPlayerState(playerId) {
     playerTemp.delete(playerId);
+    playerBodyTemp.delete(playerId);
     playerUV.delete(playerId);
+    playerThirst.delete(playerId);
+    playerThirstExhaustion.delete(playerId);
     playerColdTime.delete(playerId);
     playerHeatTime.delete(playerId);
     playerHydration.delete(playerId);

@@ -29,12 +29,15 @@ export function getDailyTempCurve(time) {
     return Math.sin(((time - 6000) / 24000) * Math.PI * 2 * -1);
 }
 
-// ── Main calculation ──────────────────────────────────────────────────────────
+// ── Main calculation — produces ACTUAL TEMP ────────────────────────────────
 // Call once per heavy-calc tick (every 20 ticks).
+// This function computes Actual Temp only (env/ambient) — the first of the
+// three-temp model. Body Temp (lags this) and Feels Like (derived display
+// value) are computed downstream, not here.
 // Returns everything the GUI needs: new temp, UV, biome key, and all flags.
 
 export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
-    const biomeKey = getBiomeKey(player);
+    const biomeKey = getBiomeKey(player, lastBiomeKey);
     const biome = BIOME_DATA[biomeKey] ?? BIOME_DATA.plains;
     const isSpecialDim = biomeKey === "nether" || biomeKey === "end";
 
@@ -246,6 +249,8 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
 
     const rawTemp = current + (target - current) * lerpRate;
     const newTemp = Math.max(-273, isSpecialDim ? rawTemp : Math.max(-89, rawTemp));
+    // newTemp = Actual Temp (env/ambient). Body Temp will lerp toward this
+    // (or toward Feels Like, once that's decided) in a separate step.
 
     return {
         newTemp,
@@ -256,4 +261,24 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
         inPowderSnow, buriedInSnow, onSnowLayer,
         onIce, onPackedIce, onBlueIce,
     };
+}
+
+// ── Body Temperature lerp ────────────────────────────────────────────────────
+// Call once per heavy-calc tick, after calculateTemperature(), passing its
+// newTemp as `actualTemp`. Body Temp lags behind rather than snapping —
+// this is what frostbite/heatstroke will check once step 8 switches over.
+
+export function calculateBodyTemp(currentBodyTemp, actualTemp, lerpRate) {
+    return currentBodyTemp + (actualTemp - currentBodyTemp) * lerpRate;
+}
+
+// ── Feels Like ────────────────────────────────────────────────────────────────
+// Derived display-time value — NOT persistent state, no Map, recomputed
+// fresh whenever needed. Takes Actual Temp plus humidity/wetness modifiers.
+// humidity: 0–100 (%). wetness: 0–1 (0 = dry, 1 = fully soaked).
+// Placeholder formula until step 5 wires in a real humidity calculation —
+// humidity is currently passed in as a flat 50 from main.js.
+export function calculateFeelsLike(actualTemp, humidity, wetness) {
+    // Saved
+    return feelsLike;
 }

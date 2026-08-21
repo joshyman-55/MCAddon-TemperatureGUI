@@ -6,12 +6,16 @@
 import { world, system } from "@minecraft/server";
 import { BIOME_DATA } from "./biomeData.js";
 import { getBiomeKey } from "./biomeDetection.js";
-import { calculateTemperature, toFahrenheit } from "./tempCalculator.js";
+import { calculateTemperature, calculateBodyTemp, toFahrenheit } from "./tempCalculator.js";
 import { getNearestGroundBlocks } from "./blockUtils.js";
 import {
-  playerTemp, playerUV, playerColdTime, playerHeatTime, playerHydration,
+  playerTemp, playerBodyTemp, playerUV, playerColdTime, playerHeatTime, playerHydration,
+  playerThirst, playerThirstExhaustion, THIRST_MAX, THIRST_EXHAUSTION_THRESHOLD,
+  EXHAUSTION_SPRINT, EXHAUSTION_JUMP, EXHAUSTION_SPRINT_JUMP,
+  EXHAUSTION_MINE_BLOCK, EXHAUSTION_PER_DAMAGE,
   playerLastBiome, playerUseFahrenheit, SPAWN_TEMP,
   playerRespawnGrace, RESPAWN_GRACE_TICKS, playerPreDeathTemp,
+  BODY_TEMP_LERP_RATE,
   playerFireSpike,
   ensurePlayerState, clearPlayerState,
   savePersistedState, loadPersistedState
@@ -38,7 +42,7 @@ world.afterEvents.worldLoad.subscribe(() => {
     if (c <= 0) return "§d"; // purple  — freezing
     if (c <= 9) return "§b"; // blue    — very cold
     if (c <= 15) return "§a"; // green   — cool
-    if (c <= 25) return "§e"; // yellow  — comfortable
+    if (c <= 25) return "§e"; // yellow  — warm
     if (c <= 35) return "§6"; // orange  — hot
     return "§c";              // red     — dangerous
   }
@@ -59,6 +63,19 @@ world.afterEvents.worldLoad.subscribe(() => {
     return `${hours}:${mins < 10 ? "0" : ""}${mins} ${ampm}`;
   }
 
+  function addThirstExhaustion(player, amount) {
+    const current = playerThirstExhaustion.get(player.id) ?? 0;
+    let updated = current + amount;
+
+    if (updated >= THIRST_EXHAUSTION_THRESHOLD) {
+      updated -= THIRST_EXHAUSTION_THRESHOLD;
+      const thirst = playerThirst.get(player.id) ?? THIRST_MAX;
+      playerThirst.set(player.id, Math.max(0, thirst - 1));
+    }
+
+    playerThirstExhaustion.set(player.id, updated);
+  }
+
   // ── Events ────────────────────────────────────────────────────────────────────
 
   world.afterEvents.playerSpawn.subscribe((event) => {
@@ -69,7 +86,7 @@ world.afterEvents.worldLoad.subscribe(() => {
       loadPersistedState(event.player);
     }
 
-    const biomeKey = getBiomeKey(event.player);
+    const biomeKey = getBiomeKey(event.player, playerLastBiome.get(event.player.id));
     const biome = BIOME_DATA[biomeKey] ?? BIOME_DATA.plains;
 
     if (isNew) {
@@ -126,7 +143,7 @@ world.afterEvents.worldLoad.subscribe(() => {
     world.afterEvents.playerSleepStateChange.subscribe((event) => {
       if (!event.isSleeping) return;
       const player = event.player;
-      const key = getBiomeKey(player);
+      const key = getBiomeKey(player, playerLastBiome.get(player.id));
       const biome = BIOME_DATA[key] ?? BIOME_DATA.plains;
       const reset = Math.max(biome.min, Math.min(biome.max,
         biome.default + (Math.random() * 10 - 5)));
@@ -151,7 +168,21 @@ world.afterEvents.worldLoad.subscribe(() => {
       if (!source || !playerHydration.has(source.id)) return;
       const charges = playerHydration.get(source.id) ?? 0;
       if (charges < 3) playerHydration.set(source.id, charges + 1);
+
+      const currentThirst = playerThirst.get(source.id) ?? THIRST_MAX;
+      playerThirst.set(source.id, Math.min(THIRST_MAX, currentThirst + 6));
     }
+  });
+
+  world.afterEvents.playerBreakBlock.subscribe((event) => {
+    addThirstExhaustion(event.player, EXHAUSTION_MINE_BLOCK);
+  });
+
+  world.afterEvents.entityHurt.subscribe((event) => {
+    const entity = event.hurtEntity;
+    if (entity.typeId !== "minecraft:player") return;
+    const damage = event.damage ?? 0;
+    addThirstExhaustion(entity, damage * EXHAUSTION_PER_DAMAGE);
   });
 
   // ── Main tick ─────────────────────────────────────────────────────────────────
@@ -165,6 +196,11 @@ world.afterEvents.worldLoad.subscribe(() => {
     for (const player of world.getAllPlayers()) {
       try {
         ensurePlayerState(player);
+
+        if (player.isSprinting) {
+          addThirstExhaustion(player, EXHAUSTION_SPRINT);
+        }
+
         if (!playerDisplayTemp.has(player.id)) {
           playerDisplayTemp.set(player.id, playerTemp.get(player.id) ?? SPAWN_TEMP);
         }
@@ -183,10 +219,12 @@ world.afterEvents.worldLoad.subscribe(() => {
           ? Math.round(toFahrenheit(smoothDisplay))
           : Math.round(smoothDisplay);
         const unit = useFahrenheit ? "°F" : "°C";
+        const thirstDisplay = playerThirst.get(player.id) ?? THIRST_MAX;
 
         player.onScreenDisplay.setActionBar(
           `§fTemp: ${getTempColor(smoothDisplay)}${displayValue}${unit}  ` +
-          `${getTimeColor(time)}${getTimeString(time)}`
+          `${getTimeColor(time)}${getTimeString(time)}  ` +
+          `§bThirst: ${thirstDisplay}/${THIRST_MAX}`
         );
 
         if (!doHeavyCalc) continue;
@@ -210,6 +248,11 @@ world.afterEvents.worldLoad.subscribe(() => {
           playerLastBiome.set(player.id, result.biomeKey);
         }
 
+        // ── Body Temp — lags behind Actual Temp (result.newTemp) ──────────
+         const currentBodyTemp = playerBodyTemp.get(player.id) ?? result.newTemp;
+        const newBodyTemp = calculateBodyTemp(currentBodyTemp, result.newTemp, BODY_TEMP_LERP_RATE);
+        playerBodyTemp.set(player.id, newBodyTemp);
+
         const displayC = Math.round(result.newTemp);
 
         // ── Effects & damage ──────────────────────────────────────────────
@@ -227,9 +270,9 @@ world.afterEvents.worldLoad.subscribe(() => {
   // ── Debug stick ───────────────────────────────────────────────────────────────
   // Right-click any block with a stick to print full debug info to chat.
 
-  world.beforeEvents.itemUseOn.subscribe((event) => {
-    if (event.itemStack.typeId !== "minecraft:stick") return;
-    const player = event.source;
+  world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
+    if (event.itemStack?.typeId !== "minecraft:stick") return;
+    const player = event.player;
     if (!player || !playerTemp.has(player.id)) return;
 
     const px = Math.floor(player.location.x);
@@ -245,7 +288,7 @@ world.afterEvents.worldLoad.subscribe(() => {
     try { rawBiome = player.dimension.getBiome(player.location).id ?? "unknown"; } catch { }
 
     player.sendMessage(
-      `§b[DEBUG] Biome: ${getBiomeKey(player)} | ` +
+      `§b[DEBUG] Biome: ${getBiomeKey(player, playerLastBiome.get(player.id))} | ` +
       `Temp: ${Math.round(playerTemp.get(player.id))}°C | Y: ${py}`
     );
     player.sendMessage(`§e[DEBUG] rawBiome: ${rawBiome}`);
