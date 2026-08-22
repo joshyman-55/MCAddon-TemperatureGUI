@@ -6,7 +6,7 @@
 import { world, system } from "@minecraft/server";
 import { BIOME_DATA } from "./biomeData.js";
 import { getBiomeKey } from "./biomeDetection.js";
-import { calculateTemperature, calculateBodyTemp, getHumidityTarget, calculateHumidity, calculateFeelsLike, toFahrenheit, roundToTenth } from "./tempCalculator.js";
+import { calculateTemperature, calculateBodyTemp, getBodyTempTarget, getHumidityTarget, calculateHumidity, calculateFeelsLike, toFahrenheit, roundToTenth } from "./tempCalculator.js";
 import { getNearestGroundBlocks } from "./blockUtils.js";
 import {
   playerTemp, playerBodyTemp, playerHumidity,playerUV, playerColdTime, playerHeatTime, playerHydration,
@@ -52,6 +52,18 @@ world.afterEvents.worldLoad.subscribe(() => {
     if (weather === "thunder") return "§8Thunder";
     if (weather === "rain") return "§9Rain";
     return "§fClear";
+  }
+
+  function getThirstBarString(thirst) {
+    const fullDroplets = Math.floor(thirst / 2);
+    const hasHalf = thirst % 2 === 1;
+    let bar = "";
+    for (let i = 0; i < 10; i++) {
+      if (i < fullDroplets) bar += "\uE000";
+      else if (i === fullDroplets && hasHalf) bar += "\uE001";
+      else bar += "\uE002";
+    }
+    return bar;
   }
 
   function getTimeColor(time) {
@@ -111,6 +123,12 @@ world.afterEvents.worldLoad.subscribe(() => {
       else if (coldBiomes.includes(biomeKey)) spawnTemp = 5;
       else if (specialBiomes.includes(biomeKey)) spawnTemp = 10;
       else spawnTemp = 18;
+
+      // ── Body Temp & Humidity — also reset on respawn, same as Actual Temp ──
+      // Prevents carrying over dangerous body temp or extreme humidity from
+      // the moment of death into the fresh respawn.
+      playerBodyTemp.set(event.player.id, 37);
+      playerHumidity.set(event.player.id, 50);
 
       playerTemp.set(event.player.id, spawnTemp);
       playerDisplayTemp.set(event.player.id, spawnTemp);
@@ -233,12 +251,18 @@ world.afterEvents.worldLoad.subscribe(() => {
         const feelsLikeDisplay = useFahrenheit
           ? Math.round(toFahrenheit(feelsLikeValue))
           : Math.round(feelsLikeValue);
-          const weatherValue = playerLastWeather.get(player.id) ?? null;
+        const weatherValue = playerLastWeather.get(player.id) ?? null;
+
+        const bodyTempValue = playerBodyTemp.get(player.id) ?? 37;
+        const bodyTempDisplay = useFahrenheit
+          ? roundToTenth(toFahrenheit(bodyTempValue))
+          : roundToTenth(bodyTempValue);
 
         player.onScreenDisplay.setActionBar(
-          `§fTemp: ${getTempColor(smoothDisplay)}${displayValue}${unit} §7(Feels ${feelsLikeDisplay}${unit})  ` +
+          `§fTemp: ${getTempColor(smoothDisplay)}${displayValue}${unit} §7(Feels ${getTempColor(feelsLikeValue)}${feelsLikeDisplay}${unit}§7)  ` +
           `${getTimeColor(time)}${getTimeString(time)}\n` +
-          `§bThirst: ${thirstDisplay}/${THIRST_MAX}  §3Humidity: ${Math.round(humidityValue)}%  ${getWeatherString(weatherValue)}`
+          `§fBody: ${getTempColor(bodyTempValue)}${bodyTempDisplay}${unit}  ` +
+          `§3Humidity: ${Math.round(humidityValue)}%  ${getWeatherString(weatherValue)}`
         );
 
         if (!doHeavyCalc) continue;
@@ -263,8 +287,10 @@ world.afterEvents.worldLoad.subscribe(() => {
         }
 
         // ── Body Temp — lags behind Actual Temp (result.newTemp) ──────────
+        // not raw ambient directly (32–43°C physiological scale) ───────────
         const currentBodyTemp = playerBodyTemp.get(player.id) ?? 37;
-        const newBodyTemp = calculateBodyTemp(currentBodyTemp, result.newTemp, BODY_TEMP_LERP_RATE);
+        const bodyTempTarget = getBodyTempTarget(result.newTemp);
+        const newBodyTemp = calculateBodyTemp(currentBodyTemp, bodyTempTarget, BODY_TEMP_LERP_RATE);
         playerBodyTemp.set(player.id, newBodyTemp);
 
         // ── Humidity — lags toward a biome/weather/indoor target ──────────
@@ -277,6 +303,19 @@ world.afterEvents.worldLoad.subscribe(() => {
         // ── Feels Like (heavy-calc copy, unused for display) — kept for
         // parity/logging; the action bar recomputes its own every tick
         const feelsLike = calculateFeelsLike(result.newTemp, newHumidity, 0);
+
+        // ── Thirst bar — sent as an invisible title, read by a custom JSON UI
+        // panel docked above the hotbar. stayDuration 0 keeps it from ever
+        // flashing on screen; the "THIRSTBAR:" prefix lets the UI filter this
+        // out from real game titles (achievements, death screen, etc).
+        const thirstBar = getThirstBarString(playerThirst.get(player.id) ?? THIRST_MAX);
+        try {
+          player.onScreenDisplay.setTitle(`THIRSTBAR:${thirstBar}` , {
+            stayDuration: 0,
+            fadeInDuration: 0,
+            fadeOutDuration: 0
+          });
+        } catch { }
 
         const displayC = Math.round(result.newTemp);
         const bodyC = roundToTenth(newBodyTemp);

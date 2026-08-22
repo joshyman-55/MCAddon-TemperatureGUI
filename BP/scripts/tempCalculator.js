@@ -272,14 +272,26 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
     };
 }
 
+// ── Body Temp target ─────────────────────────────────────────────────────────
+// Converts raw Actual Temp (wide ambient scale, e.g. -89 to 200°C) into a
+// physiologically meaningful target on the 32–43°C body temp scale. Deviation
+// from a comfortable ambient baseline (20°C) scales down at 0.1 per degree —
+// every 10°C of ambient swing shifts the body temp target by ~1°C.
+
+export function getBodyTempTarget(actualTemp, comfortTemp = 20) {
+    const deviation = actualTemp - comfortTemp;
+    const bodyTempTarget = deviation * 0.1;
+    return Math.max(32, Math.min(43, 37 + bodyTempTarget));
+}
+
 // ── Body Temperature lerp ────────────────────────────────────────────────────
 // Call once per heavy-calc tick, after calculateTemperature(), passing its
 // newTemp as `actualTemp`. Body Temp lags behind rather than snapping —
 // this is what frostbite/heatstroke will check once step 8 switches over.
 
-export function calculateBodyTemp(currentBodyTemp, actualTemp, lerpRate) {
-    const lerped = currentBodyTemp + (actualTemp - currentBodyTemp) * lerpRate;
-    return Math.max(32, Math.min(43, lerped)); // psyiological range only
+export function calculateBodyTemp(currentBodyTemp, bodyTempTarget, lerpRate) {
+    const lerped = currentBodyTemp + (bodyTempTarget - currentBodyTemp) * lerpRate;
+    return Math.max(32, Math.min(43, lerped)); // physiological range only
 }
 
 // ── Humidity target ──────────────────────────────────────────────────────────
