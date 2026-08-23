@@ -16,7 +16,7 @@ import {
   playerLastBiome, playerUseFahrenheit, SPAWN_TEMP,
   playerRespawnGrace, RESPAWN_GRACE_TICKS, playerPreDeathTemp,
   BODY_TEMP_LERP_RATE, HUMIDITY_LERP_RATE,
-  playerFireSpike, playerSnowSpike, playerBurialTime,
+  playerFireSpike, playerSnowSpike, playerBurialTime, playerActivityHeat,
   ensurePlayerState, clearPlayerState,
   savePersistedState, loadPersistedState
 } from "./playerState.js";
@@ -38,6 +38,20 @@ world.afterEvents.worldLoad.subscribe(() => {
   // This eliminates the "skip every second" visual artifact
   const playerDisplayTemp = new Map();
   const playerLastWeather = new Map();
+  // ── World weather tracking — player.dimension.getWeather() is not a
+  // callable function on this game version, so we track weather changes
+  // via the event instead, which is confirmed to exist and work.
+  let currentWorldWeather = "clear";
+  try {
+    world.afterEvents.weatherChange.subscribe((event) => {
+      const w = event.newWeather;
+      currentWorldWeather = w === "Thunder" ? "thunder"
+        : w === "Rain" ? "rain"
+        : "clear";
+    });
+  } catch (e) {
+    world.sendMessage("§e[Warn] weatherChange event unavailable: " + e);
+  }
   const playerContactHeat = new Map();
   const playerContactCold = new Map(); 
 
@@ -53,7 +67,7 @@ world.afterEvents.worldLoad.subscribe(() => {
   }
 
   function getWeatherString(weather) {
-    if (weather === "thunder") return "§8Thunder";
+    if (weather === "thunder") return "§bThunder";
     if (weather === "rain") return "§9Rain";
     return "§fClear";
   }
@@ -230,6 +244,12 @@ world.afterEvents.worldLoad.subscribe(() => {
           addThirstExhaustion(player, EXHAUSTION_SPRINT);
         }
 
+        const currentActivityHeat = playerActivityHeat.get(player.id) ?? 0;
+        const newActivityHeat = player.isSprinting
+        ? Math.min(1, currentActivityHeat + 0.01)
+        : Math.max(0, currentActivityHeat - 0.02);
+        playerActivityHeat.set(player.id, newActivityHeat);
+
         if (!playerDisplayTemp.has(player.id)) {
           playerDisplayTemp.set(player.id, playerTemp.get(player.id) ?? SPAWN_TEMP);
         }
@@ -284,7 +304,7 @@ world.afterEvents.worldLoad.subscribe(() => {
         const uv = playerUV.get(player.id);
         const lastBiome = playerLastBiome.get(player.id);
 
-        const result = calculateTemperature(player, simTemp, uv, lastBiome, time);
+        const result = calculateTemperature(player, simTemp, uv, lastBiome, time, currentWorldWeather);
 
         playerTemp.set(player.id, result.newTemp);
         playerUV.set(player.id, result.newUV);
@@ -298,7 +318,7 @@ world.afterEvents.worldLoad.subscribe(() => {
         // meaning body temp swings more gently instead of just raising the
         // symptom threshold (that part is handled separately in effectsHandler).
         const currentBodyTemp = playerBodyTemp.get(player.id) ?? 37;
-        const bodyTempTarget = getBodyTempTarget(result.newTemp);
+        const bodyTempTarget = getBodyTempTarget(result.newTemp) + newActivityHeat;
         const { coldBonus, heatBonus } = getArmorTempModifier(player);
         const insulation = coldBonus + heatBonus;
         const insulationFactor = Math.max(0.3, 1 - insulation / 100);
@@ -458,6 +478,19 @@ world.afterEvents.worldLoad.subscribe(() => {
     player.sendMessage(
       `§d[DEBUG] Grace: ${playerRespawnGrace.get(player.id) ?? 0} | ` +
       `PreDeath: ${preDeathData ? `${Math.round(preDeathData.temp)}°C (${preDeathData.biome})` : "none"}`
+    );
+    let rawWeather = "error";
+    try { rawWeather = player.dimension.getWeather(); } catch (e) { rawWeather = `ERROR: ${e}`; }
+    player.sendMessage(
+      `§e[DEBUG] rawWeather: ${rawWeather} | stored: ${playerLastWeather.get(player.id) ?? "null"}`
+    );
+    player.sendMessage(
+      `§b[DEBUG] BodyTemp: ${playerBodyTemp.get(player.id)?.toFixed(1) ?? "?"}°C | ` +
+      `coldTime: ${playerColdTime.get(player.id) ?? 0}/1000 | heatTime: ${playerHeatTime.get(player.id) ?? 0}/2000`
+    );
+    player.sendMessage(
+      `§d[DEBUG] Humidity: ${playerHumidity.get(player.id)?.toFixed(1) ?? "?"}% | ` +
+      `Weather(stored): ${playerLastWeather.get(player.id) ?? "null"}`
     );
   });
 });

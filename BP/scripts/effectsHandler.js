@@ -6,9 +6,32 @@
 
 import {
     playerColdTime, playerHeatTime, playerHydration,
-    FROSTBITE_THRESHOLD, HEATSTROKE_THRESHOLD
+    FROSTBITE_THRESHOLD, HEATSTROKE_THRESHOLD, playerOverlayCooldown
 } from "./playerState.js";
 import { getArmorTempModifier, getFireProtectionCap, getFrostWalkerCap } from "./armorDetector.js";
+
+// ── Screen overlay pulse ────────────────────────────────────────────────────
+// Brief camera fade toward a color, used as a visual danger warning. Gated by
+// a per-player cooldown (in heavy-calc ticks, ~1s each) so it pulses every
+// few seconds instead of every tick, which would be overwhelming.
+const OVERLAY_COOLDOWN_TICKS = 3;
+
+function tryOverlayPulse(player, color, holdTime) {
+    const cooldown = playerOverlayCooldown.get(player.id) ?? 0;
+    if (cooldown > 0) {
+        playerOverlayCooldown.set(player.id, cooldown - 1);
+        return;
+    }
+    try {
+        player.camera.fade({
+            fadeColor: color,
+            fadeTime: { fadeInTime: 0.3, holdTime, fadeOutTime: 0.6 }
+        });
+    } catch (e) {
+        try { player.sendMessage(`§c[Overlay ERROR] ${e}`); } catch { }
+    }
+    playerOverlayCooldown.set(player.id, OVERLAY_COOLDOWN_TICKS);
+}
 
 // ── Frostbite ─────────────────────────────────────────────────────────────────
 // Cold accumulates when body temp ≤ 35.0°C and drains when warmer.
@@ -36,6 +59,16 @@ export function applyFrostbite(player, bodyC) {
     playerColdTime.set(player.id, coldTime);
 
     const coldRatio = coldTime / FROSTBITE_THRESHOLD;
+
+    // ── Cold overlay — pulses once past 30% toward frostbite, intensifying ────
+    if (coldRatio >= 0.3) {
+        const intensity = Math.min(1, coldRatio);
+        tryOverlayPulse(
+            player,
+            { red: 0.55, green: 0.75, blue: 1.0 },
+            0.15 + intensity * 0.35
+        );
+    }
 
     if (coldTime >= FROSTBITE_THRESHOLD) {
         // Full frostbite — Slowness III + freeze damage
@@ -91,6 +124,16 @@ export function applyHeatstroke(player, bodyC) {
     playerHeatTime.set(player.id, heatTime);
 
     const heatRatio = heatTime / HEATSTROKE_THRESHOLD;
+    
+    // ── Heat overlay — pulses once past 30% toward heatstroke, intensifying ───
+    if (heatRatio >= 0.3) {
+        const intensity = Math.min(1, heatRatio);
+        tryOverlayPulse(
+            player,
+            { red: 1.0, green: 0.45, blue: 0.1 },
+            0.15 + intensity * 0.35
+        );
+    }
 
     if (heatTime >= HEATSTROKE_THRESHOLD) {
         // Full heatstroke — Nausea II + Weakness, removes fire resistance

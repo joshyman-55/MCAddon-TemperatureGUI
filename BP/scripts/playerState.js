@@ -41,6 +41,10 @@ export const playerFireSpike = new Map();
 export const playerSnowSpike = new Map();
 // Ticks spent buried/in powder snow — escalates Feels Like the longer it lasts
 export const playerBurialTime = new Map();
+// Cooldown (heavy-calc ticks) before the next frost/heat screen overlay pulse
+export const playerOverlayCooldown = new Map();
+// Accumulated activity heat (0–1) from sprinting/exertion — nudges Body Temp up
+export const playerActivityHeat = new Map();
 
 // ── Thresholds ────────────────────────────────────────────────────────────────
 export const FROSTBITE_THRESHOLD = 1000;
@@ -108,6 +112,8 @@ export function ensurePlayerState(player) {
     if (!playerFireSpike.has(player.id)) playerFireSpike.set(player.id, null);
     if (!playerSnowSpike.has(player.id)) playerSnowSpike.set(player.id, null);
     if (!playerBurialTime.has(player.id)) playerBurialTime.set(player.id, 0);
+    if (!playerOverlayCooldown.has(player.id)) playerOverlayCooldown.set(player.id, 0);
+    if (!playerActivityHeat.has(player.id)) playerActivityHeat.set(player.id, 0);
     if (!playerUseFahrenheit.has(player.id)) {
         // Restore saved preference — persists through death and rejoining
         playerUseFahrenheit.set(player.id, false);
@@ -133,4 +139,6 @@ export function clearPlayerState(playerId) {
     playerFireSpike.delete(playerId);
     playerSnowSpike.delete(playerId);
     playerBurialTime.delete(playerId);
+    playerOverlayCooldown.delete(playerId);
+    playerActivityHeat.delete(playerId);
 }

@@ -40,7 +40,7 @@ export function getDailyTempCurve(time) {
 // value) are computed downstream, not here.
 // Returns everything the GUI needs: new temp, UV, biome key, and all flags.
 
-export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
+export function calculateTemperature(player, current, uv, lastBiomeKey, time, worldWeather = "clear") {
     const biomeKey = getBiomeKey(player, lastBiomeKey);
     const biome = BIOME_DATA[biomeKey] ?? BIOME_DATA.plains;
     const isSpecialDim = biomeKey === "nether" || biomeKey === "end";
@@ -102,19 +102,15 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
     else if (nearLava) target = Math.max(target, 60);
     else if (onMagma) target = Math.max(target, 75);
 
-    // ── Weather modifier ──────────────────────────────────────────────────────
+    // ── Weather modifier — passed in from main.js, tracked via the
+    // weatherChange event since getWeather() isn't callable on this version.
     let weather = null;
     if (!isSpecialDim && !inLava && !nearLava && !onFire) {
-        try {
-            const weatherType = player.dimension.getWeather();
-            weather = weatherType === "Thunder" ? "thunder"
-                : weatherType === "Rain" ? "rain"
-                : null;
-            if (weather === "thunder") target -= 10;
-            else if (weather === "rain") {
-                target -= biome.default <= 0 ? 14 : 6;
-            }
-        } catch { }
+        weather = worldWeather === "clear" ? null : worldWeather;
+        if (weather === "thunder") target -= 10;
+        else if (weather === "rain") {
+            target -= biome.default <= 0 ? 14 : 6;
+        }
     }
 
     // ── Indoors moderates temperature toward biome-aware comfort ──────────────
@@ -310,12 +306,19 @@ export function getHumidityTarget(biomeKey, inWater, weather, indoors) {
     const HUMID_BIOMES = ["jungle", "swamp", "mushroom", "lush", "warmocean", "ocean"];
     const DRY_BIOMES = ["desert", "badlands", "savanna", "nether"];
 
+    const isDry = DRY_BIOMES.includes(biomeKey);
+
     let target = 50; // neutral baseline
     if (HUMID_BIOMES.includes(biomeKey)) target = 80;
-    else if (DRY_BIOMES.includes(biomeKey)) target = 20;
+    else if (isDry) target = 20;
 
-    if (weather === "rain") target = Math.max(target, 85);
-    else if (weather === "thunder") target = Math.max(target, 90);
+    if (isDry) {
+        if (weather === "rain") target = Math.max(target, 35);
+        else if (weather === "thunder") target = Math.max(target, 40);
+    } else {
+        if (weather === "rain") target = Math.max(target, 85);
+        else if (weather === "thunder") target = Math.max(target, 90);
+    }
 
     if (indoors) target = 50 + (target - 50) * 0.4; // indoors moderates toward neutral
 
@@ -337,7 +340,7 @@ export function calculateHumidity(currentHumidity, target, lerpRate) {
 
 export function calculateFeelsLike(actualTemp, humidity, wetness = 0, contactHeat = 0) {
     let feelsLike = actualTemp;
-    const humidityOffset = (humidity - 50) / 50; 
+    const humidityOffset = (humidity - 50) / 50;
     if (actualTemp >= 25) {
         feelsLike += humidityOffset * 4;
     } else if (actualTemp <= 5) {

@@ -8,16 +8,18 @@
  * and ±1 Y of the player's feet.
  */
 export function checkBlocks(player, ids, radius) {
-    const loc = player.location;
     const dim = player.dimension;
-    const x = Math.floor(loc.x);
-    const y = Math.floor(loc.y);
-    const z = Math.floor(loc.z);
+    const origin = {
+        x: Math.floor(player.location.x),
+        y: Math.floor(player.location.y),
+        z: Math.floor(player.location.z)
+    };
     for (let dx = -radius; dx <= radius; dx++) {
         for (let dz = -radius; dz <= radius; dz++) {
             for (let dy = -1; dy <= 1; dy++) {
+                const pos = { x: origin.x + dx, y: origin.y + dy, z: origin.z + dz };
                 try {
-                    const block = dim.getBlock({ x: x + dx, y: y + dy, z: z + dz });
+                    const block = dim.getBlock(pos);
                     if (ids.includes(block?.typeId)) return true;
                 } catch { }
             }
@@ -31,17 +33,19 @@ export function checkBlocks(player, ids, radius) {
  * and ±2 Y of the player's feet.
  */
 export function countBlocks(player, ids, radius) {
-    const loc = player.location;
     const dim = player.dimension;
-    const x = Math.floor(loc.x);
-    const y = Math.floor(loc.y);
-    const z = Math.floor(loc.z);
+    const origin = {
+        x: Math.floor(player.location.x),
+        y: Math.floor(player.location.y),
+        z: Math.floor(player.location.z)
+    };
     let count = 0;
     for (let dx = -radius; dx <= radius; dx++) {
         for (let dz = -radius; dz <= radius; dz++) {
             for (let dy = -2; dy <= 2; dy++) {
+                const pos = { x: origin.x + dx, y: origin.y + dy, z: origin.z + dz };
                 try {
-                    const block = dim.getBlock({ x: x + dx, y: y + dy, z: z + dz });
+                    const block = dim.getBlock(pos);
                     if (ids.includes(block?.typeId)) count++;
                 } catch { }
             }
@@ -55,12 +59,15 @@ export function countBlocks(player, ids, radius) {
  * the first solid (non-air) block is. Returns 31 if nothing is found.
  */
 export function getDistanceToGround(player) {
-    const px = Math.floor(player.location.x);
-    const py = Math.floor(player.location.y);
-    const pz = Math.floor(player.location.z);
+    const origin = {
+        x: Math.floor(player.location.x),
+        y: Math.floor(player.location.y),
+        z: Math.floor(player.location.z)
+    };
     for (let dy = 0; dy <= 30; dy++) {
+        const pos = { x: origin.x, y: origin.y - dy, z: origin.z };
         try {
-            const block = player.dimension.getBlock({ x: px, y: py - dy, z: pz });
+            const block = player.dimension.getBlock(pos);
             if (block &&
                 block.typeId !== "minecraft:air" &&
                 block.typeId !== "minecraft:cave_air" &&
@@ -76,24 +83,26 @@ export function getDistanceToGround(player) {
  * Returns { foundIds: Set<string>, groundY: number }
  */
 export function getNearestGroundBlocks(player, radius, depthSearch = 50) {
-    const loc = player.location;
     const dim = player.dimension;
-    const px = Math.floor(loc.x);
-    const py = Math.floor(loc.y);
-    const pz = Math.floor(loc.z);
+    const origin = {
+        x: Math.floor(player.location.x),
+        y: Math.floor(player.location.y),
+        z: Math.floor(player.location.z)
+    };
 
-    const heightAboveGround = Math.max(0, py - 64);
+    const heightAboveGround = Math.max(0, origin.y - 64);
     const scanRadius = Math.min(20, radius + Math.floor(heightAboveGround / 15));
 
-    let groundY = py;
+    let groundY = origin.y;
     for (let dy = 0; dy <= depthSearch; dy++) {
+        const pos = { x: origin.x, y: origin.y - dy, z: origin.z };
         try {
-            const block = dim.getBlock({ x: px, y: py - dy, z: pz });
+            const block = dim.getBlock(pos);
             if (block &&
                 block.typeId !== "minecraft:air" &&
                 block.typeId !== "minecraft:cave_air" &&
                 block.typeId !== "minecraft:void_air") {
-                groundY = py - dy;
+                groundY = pos.y;
                 break;
             }
         } catch { }
@@ -103,8 +112,9 @@ export function getNearestGroundBlocks(player, radius, depthSearch = 50) {
     for (let dx = -scanRadius; dx <= scanRadius; dx++) {
         for (let dz = -scanRadius; dz <= scanRadius; dz++) {
             for (let dy = -1; dy <= 3; dy++) {
+                const pos = { x: origin.x + dx, y: groundY + dy, z: origin.z + dz };
                 try {
-                    const block = dim.getBlock({ x: px + dx, y: groundY + dy, z: pz + dz });
+                    const block = dim.getBlock(pos);
                     if (block &&
                         block.typeId !== "minecraft:air" &&
                         block.typeId !== "minecraft:cave_air" &&

@@ -4,12 +4,11 @@
   "hud_thirst_bar": {
     "type": "label",
     "text": "#text",
-    "font_size": "small",
+    "font_size": "normal",
     "color": [1, 1, 1],
     "anchor_from": "bottom_middle",
     "anchor_to": "bottom_middle",
-    "offset": [-48, -45],
-    "scale" : [0.1,  0.1],
+    "offset": [-45, -45],
     "layer": 10,
 
     "$update_string": "THIRSTBAR:",
