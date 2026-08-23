@@ -24,8 +24,8 @@ export function getArmorTempModifier(player) {
                 heatBonus += 6;
             }
             else if (id.includes("netherite")) {
-                coldBonus += 0;
-                heatBonus += 6;
+                coldBonus += 6;
+                heatBonus += 8;
             }
             else if (id.includes("iron")) {
                 coldBonus += 4;
@@ -40,7 +40,7 @@ export function getArmorTempModifier(player) {
     }
 }
 
-const FP_LEVEL_CAP = { 1: 60, 2: 75, 3: 90, 4: 100 };
+const FP_LEVEL_CAP = { 1: 39.5, 2: 40.5, 3: 41.5, 4: 42.5 };
 
 export function getFireProtectionCap(player) {
     try {
@@ -73,7 +73,7 @@ export function getFireProtectionCap(player) {
     }
 }
 
-const FW_LEVEL_CAP = { 1: -89, 2: -150 };
+const FW_LEVEL_CAP = { 1: 34.0, 2: 33.0 };
 
 export function getFrostWalkerCap(player) {
     try {

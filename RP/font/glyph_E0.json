@@ -2,7 +2,7 @@
   "com.mojang:glyph": {
     "texture_data": {
       "224": {
-        "texture": "font/glyph_E1.png"
+        "texture": "font/glyph_E0.png"
       }
     }
   }

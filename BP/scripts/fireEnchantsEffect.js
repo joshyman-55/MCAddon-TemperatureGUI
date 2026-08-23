@@ -1,11 +1,11 @@
 import { world, EquipmentSlot } from "@minecraft/server";
-import { playerFireSpike, playerTemp } from "./playerState.js";
+import { playerFireSpike, playerBodyTemp } from "./playerState.js";
 
 const FIRE_SPIKE_CAPS = {
-    flame_1: 90,
-    fire_aspect_1: 85,
-    fire_aspect_2: 100,
-    ghast_fireball: 95,
+    flame_1: 38.5,
+    fire_aspect_1: 38.0,
+    fire_aspect_2: 39.5,
+    ghast_fireball: 39.0,
 };
 const SPIKE_DURATION = 8;
 
@@ -36,10 +36,9 @@ export function registerFireEnchantEffect() {
 
         if (spikeCap === null) return;
 
-        const currentTemp = playerTemp.get(entity.id) ?? 18;
-        const jumpTarget = spikeCap - 20;
-        if (currentTemp < jumpTarget) {
-            playerTemp.set(entity.id, jumpTarget);
+        const currentBodyTemp = playerBodyTemp.get(entity.id) ?? 37;
+        if (currentBodyTemp < spikeCap) {
+            playerBodyTemp.set(entity.id, spikeCap);
         }
 
         const existing = playerFireSpike.get(entity.id);
@@ -65,10 +64,10 @@ export function registerFireEnchantEffect() {
             if (!hasFlame) return;
         } catch { return; }
 
-        const current = playerTemp.get(hit.id) ?? 18;
-        const jumpTarget = 70;
-        if (current < jumpTarget) {
-            playerTemp.set(hit.id, jumpTarget);
+        const currentBodyTemp = playerBodyTemp.get(hit.id) ?? 37;
+        const jumpTarget = FIRE_SPIKE_CAPS.flame_1;
+        if (currentBodyTemp < jumpTarget) {
+            playerBodyTemp.set(hit.id, jumpTarget);
         }
 
         const existing = playerFireSpike.get(hit.id);
@@ -85,10 +84,10 @@ export function registerFireEnchantEffect() {
         const hit = event.getEntityHit()?.entity;
         if (!hit || hit.typeId !== "minecraft:player") return;
 
-        const current = playerTemp.get(hit.id) ?? 18;
-        const jumpTarget = 75;
-        if (current < jumpTarget) {
-            playerTemp.set(hit.id, jumpTarget);
+        const currentBodyTemp = playerBodyTemp.get(hit.id) ?? 37;
+        const jumpTarget = FIRE_SPIKE_CAPS.ghast_fireball;
+        if (currentBodyTemp < jumpTarget) {
+            playerBodyTemp.set(hit.id, jumpTarget);
         }
 
         const existing = playerFireSpike.get(hit.id);

@@ -24,6 +24,18 @@ export function isNearLava(player) {
     return checkBlocks(player, ["minecraft:lava", "minecraft:flowing_lava"], 2);
 }
 
+// ── Player's own burning status (NOT nearby blocks) ────────────────────────────
+// Detects whether the player themselves is ablaze (fire ticks active),
+// regardless of whether any fire blocks exist nearby. This is what should
+// bump Body Temp directly — a personal event, separate from isOnFire()
+// below, which detects real fire BLOCKS near the player's feet (environmental).
+
+export function isPlayerBurning(player) {
+    try {
+        return player.getComponent("minecraft:onfire") !== undefined;
+    } catch { return false; }
+}
+
 // ── Fire ──────────────────────────────────────────────────────────────────────
 
 export function isOnFire(player) {

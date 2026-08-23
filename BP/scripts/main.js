@@ -16,11 +16,13 @@ import {
   playerLastBiome, playerUseFahrenheit, SPAWN_TEMP,
   playerRespawnGrace, RESPAWN_GRACE_TICKS, playerPreDeathTemp,
   BODY_TEMP_LERP_RATE, HUMIDITY_LERP_RATE,
-  playerFireSpike,
+  playerFireSpike, playerSnowSpike, playerBurialTime,
   ensurePlayerState, clearPlayerState,
   savePersistedState, loadPersistedState
 } from "./playerState.js";
 import { applyFrostbite, applyHeatstroke } from "./effectsHandler.js";
+import { getArmorTempModifier } from "./armorDetector.js";
+import { isPlayerBurning } from "./hazardDetection.js";
 import { registerSnowballEffect } from "./snowballEffect.js";
 import { registerFireEnchantEffect } from "./fireEnchantsEffect.js";
 
@@ -36,6 +38,8 @@ world.afterEvents.worldLoad.subscribe(() => {
   // This eliminates the "skip every second" visual artifact
   const playerDisplayTemp = new Map();
   const playerLastWeather = new Map();
+  const playerContactHeat = new Map();
+  const playerContactCold = new Map(); 
 
   // ── HUD color helpers ─────────────────────────────────────────────────────────
 
@@ -247,7 +251,9 @@ world.afterEvents.worldLoad.subscribe(() => {
         const thirstDisplay = playerThirst.get(player.id) ?? THIRST_MAX;
 
         const humidityValue = playerHumidity.get(player.id) ?? 50;
-        const feelsLikeValue = calculateFeelsLike(smoothDisplay, humidityValue, 0);
+        const contactHeatValue = playerContactHeat.get(player.id) ?? 0;
+        const contactColdValue = playerContactCold.get(player.id) ?? 0;
+        const feelsLikeValue = calculateFeelsLike(smoothDisplay, humidityValue, 0, contactHeatValue + contactColdValue);
         const feelsLikeDisplay = useFahrenheit
           ? Math.round(toFahrenheit(feelsLikeValue))
           : Math.round(feelsLikeValue);
@@ -286,12 +292,97 @@ world.afterEvents.worldLoad.subscribe(() => {
           playerLastBiome.set(player.id, result.biomeKey);
         }
 
-        // ── Body Temp — lags behind Actual Temp (result.newTemp) ──────────
-        // not raw ambient directly (32–43°C physiological scale) ───────────
+        // ── Body Temp — lags behind a scaled target derived from Actual Temp,
+        // not raw ambient directly (32–43°C physiological scale). Armor acts
+        // as insulation here — heavier cold/heat bonus slows the lerp rate,
+        // meaning body temp swings more gently instead of just raising the
+        // symptom threshold (that part is handled separately in effectsHandler).
         const currentBodyTemp = playerBodyTemp.get(player.id) ?? 37;
         const bodyTempTarget = getBodyTempTarget(result.newTemp);
-        const newBodyTemp = calculateBodyTemp(currentBodyTemp, bodyTempTarget, BODY_TEMP_LERP_RATE);
+        const { coldBonus, heatBonus } = getArmorTempModifier(player);
+        const insulation = coldBonus + heatBonus;
+        const insulationFactor = Math.max(0.3, 1 - insulation / 100);
+        const effectiveLerpRate = BODY_TEMP_LERP_RATE * insulationFactor;
+        let newBodyTemp = calculateBodyTemp(currentBodyTemp, bodyTempTarget, effectiveLerpRate);
+
+        // ── Personal burning — separate from nearby fire blocks. If the
+        // player themselves is ablaze, push Body Temp directly toward a
+        // feverish target regardless of what Actual Temp/ambient is doing.
+        if (isPlayerBurning(player) && newBodyTemp < 39.0) {
+            newBodyTemp = Math.min(39.0, newBodyTemp + 0.5);
+        }
+
         playerBodyTemp.set(player.id, newBodyTemp);
+
+        // ── Contact heat — direct skin contact (fire/lava), separate from
+        // ambient. Takes the worst single source rather than stacking them.
+        let contactHeat = 0;
+        if (result.inLava) contactHeat = 40;
+        else if (result.onFire) contactHeat = 15;
+        else if (result.nearLava) contactHeat = 12;
+        if (isPlayerBurning(player)) contactHeat = Math.max(contactHeat, 18);
+
+        // ── Campfire warmth — standing near a lit campfire should be felt
+        // personally (Feels Like) and, when close enough, actually warm the
+        // body a little, not just tint the ambient air.
+        if (result.campfire === "on") contactHeat = Math.max(contactHeat, 10);
+        else if (result.campfire === "close") contactHeat = Math.max(contactHeat, 6);
+        else if (result.campfire === "near") contactHeat = Math.max(contactHeat, 3);
+
+        if ((result.campfire === "on" || result.campfire === "close") && newBodyTemp < 38.0) {
+            newBodyTemp = Math.min(38.0, newBodyTemp + 0.2);
+            playerBodyTemp.set(player.id, newBodyTemp);
+        }
+
+        // ── Combat fire hits (Fire Aspect, Flame arrow, Fireball) — the spike
+        // set in fireEnchantsEffect.js already bumps Body Temp directly; while
+        // that spike is still active (ticking down), Feels Like should reflect
+        // it too, not just the environmental checks above.
+        const activeFireSpike = playerFireSpike.get(player.id);
+        if (activeFireSpike && activeFireSpike.ticks > 0) {
+            contactHeat = Math.max(contactHeat, 20);
+        }
+
+        playerContactHeat.set(player.id, contactHeat);
+
+        // ── Contact cold — snow/ice contact, symmetric to contactHeat above.
+        // Takes the worst single source rather than stacking.
+        let contactCold = 0;
+        if (result.onBlueIce) contactCold = -14;
+        else if (result.onPackedIce) contactCold = -11;
+        else if (result.buriedInSnow) contactCold = -16;
+        else if (result.inPowderSnow) contactCold = -13;
+        else if (result.onIce) contactCold = -8;
+        else if (result.onSnowLayer) contactCold = -5;
+
+        // ── Snowball spike — decays over a few ticks after a hit ───────────
+        const snowSpike = playerSnowSpike.get(player.id);
+        if (snowSpike && snowSpike.ticks > 0) {
+            contactCold = Math.min(contactCold, -12);
+            playerSnowSpike.set(player.id, { ticks: snowSpike.ticks - 1 });
+        } else if (snowSpike) {
+            playerSnowSpike.set(player.id, null);
+        }
+
+        // ── Burial escalation — the longer you're buried/in powder snow, the
+        // colder Feels Like gets (no cap here) and Body Temp keeps dropping
+        // slowly toward the physiological floor, instead of stopping early.
+        const isBuried = result.buriedInSnow || result.inPowderSnow;
+        let burialTicks = playerBurialTime.get(player.id) ?? 0;
+        if (isBuried) {
+            burialTicks += 1;
+            playerBurialTime.set(player.id, burialTicks);
+
+            const burialCold = Math.min(-16 - burialTicks * 2, -60);
+            contactCold = Math.min(contactCold, burialCold);
+
+            newBodyTemp = Math.max(32, newBodyTemp - 0.4);
+            playerBodyTemp.set(player.id, newBodyTemp);
+        } else if (burialTicks > 0) {
+            playerBurialTime.set(player.id, 0);
+        }
+
+        playerContactCold.set(player.id, contactCold);
 
         // ── Humidity — lags toward a biome/weather/indoor target ──────────
         const humidityTarget = getHumidityTarget(result.biomeKey, result.inWater, result.weather, result.indoors);
@@ -302,7 +393,7 @@ world.afterEvents.worldLoad.subscribe(() => {
 
         // ── Feels Like (heavy-calc copy, unused for display) — kept for
         // parity/logging; the action bar recomputes its own every tick
-        const feelsLike = calculateFeelsLike(result.newTemp, newHumidity, 0);
+        const feelsLike = calculateFeelsLike(result.newTemp, newHumidity, 0, contactHeat + contactCold);
 
         // ── Thirst bar — sent as an invisible title, read by a custom JSON UI
         // panel docked above the hotbar. stayDuration 0 keeps it from ever

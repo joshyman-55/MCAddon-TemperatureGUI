@@ -37,6 +37,10 @@ export const playerRespawnGrace = new Map();
 export const playerPreDeathTemp = new Map();
 // Fire Effects
 export const playerFireSpike = new Map();
+// Snowball cold spike — mirrors playerFireSpike, decays over a few ticks
+export const playerSnowSpike = new Map();
+// Ticks spent buried/in powder snow — escalates Feels Like the longer it lasts
+export const playerBurialTime = new Map();
 
 // ── Thresholds ────────────────────────────────────────────────────────────────
 export const FROSTBITE_THRESHOLD = 1000;
@@ -102,6 +106,8 @@ export function ensurePlayerState(player) {
     if (!playerRespawnGrace.has(player.id)) playerRespawnGrace.set(player.id, 0);
     if (!playerPreDeathTemp.has(player.id)) playerPreDeathTemp.set(player.id, null);
     if (!playerFireSpike.has(player.id)) playerFireSpike.set(player.id, null);
+    if (!playerSnowSpike.has(player.id)) playerSnowSpike.set(player.id, null);
+    if (!playerBurialTime.has(player.id)) playerBurialTime.set(player.id, 0);
     if (!playerUseFahrenheit.has(player.id)) {
         // Restore saved preference — persists through death and rejoining
         playerUseFahrenheit.set(player.id, false);
@@ -125,4 +131,6 @@ export function clearPlayerState(playerId) {
     playerRespawnGrace.delete(playerId);
     playerPreDeathTemp.delete(playerId);
     playerFireSpike.delete(playerId);
+    playerSnowSpike.delete(playerId);
+    playerBurialTime.delete(playerId);
 }

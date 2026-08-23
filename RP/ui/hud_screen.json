@@ -1,14 +1,15 @@
 {
-  "namespace": "tempgui_hud",
+  "namespace": "hud",
 
   "hud_thirst_bar": {
     "type": "label",
     "text": "#text",
-    "font_size": "normal",
+    "font_size": "small",
     "color": [1, 1, 1],
     "anchor_from": "bottom_middle",
     "anchor_to": "bottom_middle",
-    "offset": [0, -34],
+    "offset": [-48, -45],
+    "scale" : [0.1,  0.1],
     "layer": 10,
 
     "$update_string": "THIRSTBAR:",
@@ -53,7 +54,7 @@
         "array_name": "controls",
         "operation": "insert_front",
         "value": [
-          { "hud_thirst_bar@tempgui_hud.hud_thirst_bar": {} }
+          { "hud_thirst_bar@hud.hud_thirst_bar": {} }
         ]
       }
     ]

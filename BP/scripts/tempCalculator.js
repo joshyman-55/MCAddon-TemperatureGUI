@@ -100,14 +100,16 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
 
     if (inLava) target = Math.max(biome.default, 100);
     else if (nearLava) target = Math.max(target, 60);
-    else if (onFire) target = Math.max(target, 95);
     else if (onMagma) target = Math.max(target, 75);
 
     // ── Weather modifier ──────────────────────────────────────────────────────
     let weather = null;
     if (!isSpecialDim && !inLava && !nearLava && !onFire) {
         try {
-            weather = player.dimension.weather ?? world.getWeather?.() ?? null;
+            const weatherType = player.dimension.getWeather();
+            weather = weatherType === "Thunder" ? "thunder"
+                : weatherType === "Rain" ? "rain"
+                : null;
             if (weather === "thunder") target -= 10;
             else if (weather === "rain") {
                 target -= biome.default <= 0 ? 14 : 6;
@@ -140,17 +142,23 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
     target = Math.max(-273, Math.min(200, target));
 
     // ── Fire spike — applied AFTER clamp so it always wins ────────────────────
-    if (spike && spike.ticks > 0) {
-        if (target < spike.cap) {
-            target = Math.min(spike.cap, target + 6);
-        }
-        playerFireSpike.set(player.id, { cap: spike.cap, ticks: spike.ticks - 1 });
-    } else if (spike && spike.ticks <= 0) {
+    if (spike && spike.ticks <= 0) {
         playerFireSpike.set(player.id, null);
+    } else if (spike && spike.ticks > 0) {
+        playerFireSpike.set(player.id, { cap: spike.cap, ticks: spike.ticks - 1 });
     }
 
     // ── Snow / ice contact — applied LAST so they always win ──────────────────
     const { inPowderSnow, buriedInSnow, onSnowLayer, onIce, onPackedIce, onBlueIce } = getSnowContact(player, isSpecialDim);
+
+    // ── Solid snow/ice terrain — genuinely surrounding blocks, not brief
+    // contact, so (unlike thin snow layer or a passing snowball) this IS
+    // environmental, same as campfire blocks pushing ambient heat. Personal
+    // contactCold/Body Temp effects in main.js still apply on top of this.
+    if (onBlueIce) target = Math.min(target, -18);
+    else if (onPackedIce) target = Math.min(target, -12);
+    else if (onIce) target = Math.min(target, -6);
+    else if (buriedInSnow) target = Math.min(target, -10);
 
     let lerpRate = 0.025;
 
@@ -158,24 +166,17 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
         lerpRate = 0.85;
     } else if (onMagma) {
         lerpRate = 0.15;
-    } else if (onBlueIce) {
-        target = Math.min(biome.min, -20);
-        lerpRate = 0.25;
-    } else if (onPackedIce) {
-        target = Math.min(biome.min, -14);
-        lerpRate = 0.22;
-    } else if (onIce) {
-        target = Math.min(biome.min, -8);
-        lerpRate = 0.20;
-    } else if (inPowderSnow) {
-        target = Math.min(biome.min + 2, -10);
-        lerpRate = 0.35;
-    } else if (buriedInSnow) {
-        target = Math.min(biome.min + 3, -15);
-        lerpRate = 0.25;
-    } else if (onSnowLayer) {
-        target = Math.min(biome.min + 5, -3);
-        lerpRate = 0.20;
+    } else if (onBlueIce || onPackedIce || onIce || inPowderSnow || buriedInSnow || onSnowLayer) {
+        // Snow/ice contact REMOVED from Actual Temp — touching/being buried
+        // in snow is personal contact, not ambient. It reaches Feels Like via
+        // contactCold and Body Temp via a direct knock, both in main.js.
+        // Lerp rate still reflects how quickly ambient responds while in contact.
+        if (onBlueIce) lerpRate = 0.25;
+        else if (onPackedIce) lerpRate = 0.22;
+        else if (onIce) lerpRate = 0.20;
+        else if (inPowderSnow) lerpRate = 0.35;
+        else if (buriedInSnow) lerpRate = 0.25;
+        else if (onSnowLayer) lerpRate = 0.20;
     } else {
         const lastBiomeData = BIOME_DATA[lastBiomeKey] ?? BIOME_DATA.plains;
         const biomeDelta = Math.abs(biome.default - lastBiomeData.default);
@@ -280,8 +281,11 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time) {
 
 export function getBodyTempTarget(actualTemp, comfortTemp = 20) {
     const deviation = actualTemp - comfortTemp;
-    const bodyTempTarget = deviation * 0.1;
-    return Math.max(32, Math.min(43, 37 + bodyTempTarget));
+    const DEAD_ZONE = 15;
+    if (Math.abs(deviation) <= DEAD_ZONE) return 37;
+    const excess = deviation > 0 ? deviation - DEAD_ZONE : deviation + DEAD_ZONE;
+    const bodyShift = excess * 0.04;
+    return Math.max(32, Math.min(43, 37 + bodyShift));
 }
 
 // ── Body Temperature lerp ────────────────────────────────────────────────────
@@ -331,7 +335,7 @@ export function calculateHumidity(currentHumidity, target, lerpRate) {
 // Placeholder formula until step 5 wires in a real humidity calculation —
 // humidity is currently passed in as a flat 50 from main.js.
 
-export function calculateFeelsLike(actualTemp, humidity, wetness = 0) {
+export function calculateFeelsLike(actualTemp, humidity, wetness = 0, contactHeat = 0) {
     let feelsLike = actualTemp;
     const humidityOffset = (humidity - 50) / 50; 
     if (actualTemp >= 25) {
@@ -341,5 +345,7 @@ export function calculateFeelsLike(actualTemp, humidity, wetness = 0) {
     }
 
     feelsLike -= wetness * 6;
-    return feelsLike;
+    feelsLike += contactHeat;
+
+    return Math.max(-273, Math.min(200, feelsLike));
 }
