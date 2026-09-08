@@ -20,8 +20,8 @@ import {
   ensurePlayerState, clearPlayerState,
   savePersistedState, loadPersistedState
 } from "./playerState.js";
-import { applyFrostbite, applyHeatstroke } from "./effectsHandler.js";
-import { getArmorTempModifier } from "./armorDetector.js";
+import { applyFrostbite, applyHeatstroke, applyDehydration } from "./effectsHandler.js";
+import { getArmorTempModifier, getFireProtectionCap, getFrostWalkerCap } from "./armorDetector.js";
 import { isPlayerBurning } from "./hazardDetection.js";
 import { registerSnowballEffect } from "./snowballEffect.js";
 import { registerFireEnchantEffect } from "./fireEnchantsEffect.js";
@@ -37,6 +37,7 @@ world.afterEvents.worldLoad.subscribe(() => {
   // playerDisplayTemp = what the HUD shows, lerped every tick toward playerTemp
   // This eliminates the "skip every second" visual artifact
   const playerDisplayTemp = new Map();
+  const playerRestoreDone = new Set();
   const playerLastWeather = new Map();
   // ── World weather tracking — player.dimension.getWeather() is not a
   // callable function on this game version, so we track weather changes
@@ -119,17 +120,22 @@ world.afterEvents.worldLoad.subscribe(() => {
     const isNew = !playerTemp.has(event.player.id);
     ensurePlayerState(event.player);
     
+    let restored = false;
     if (isNew) {
-      loadPersistedState(event.player);
+      playerRestoreDone.add(event.player.id);
+      restored= loadPersistedState(event.player) === true;
     }
 
     const biomeKey = getBiomeKey(event.player, playerLastBiome.get(event.player.id));
     const biome = BIOME_DATA[biomeKey] ?? BIOME_DATA.plains;
 
-    if (isNew) {
+    if (isNew && !restored) {
       // First ever join — start at biome default
       playerTemp.set(event.player.id, biome.default);
       playerDisplayTemp.set(event.player.id, biome.default);
+    } else if (isNew && restored) {
+      // Player state was restored from a previous session — leave temp alone
+      playerDisplayTemp.set(event.player.id, playerTemp.get(event.player.id));
     } else if (!event.initialSpawn) {
       // Respawn after death — use safe category temp
       const hotBiomes = ["desert", "nether", "savanna", "badlands", "jungle"];
@@ -161,6 +167,7 @@ world.afterEvents.worldLoad.subscribe(() => {
   world.afterEvents.playerLeave.subscribe((event) => {
     clearPlayerState(event.playerId);
     playerDisplayTemp.delete(event.playerId);
+    playerRestoreDone.delete(event.playerId); 
   });
 
   // Save temp and biome before death — fire and lava deaths don't restore
@@ -238,6 +245,13 @@ world.afterEvents.worldLoad.subscribe(() => {
 
     for (const player of world.getAllPlayers()) {
       try {
+        if (!playerRestoreDone.has(player.id)) {
+          playerRestoreDone.add(player.id);
+          ensurePlayerState(player);
+          if (loadPersistedState(player) === true) {
+            playerDisplayTemp.set(player.id, playerTemp.get(player.id));
+          }
+        }
         ensurePlayerState(player);
 
         if (player.isSprinting) {
@@ -318,11 +332,21 @@ world.afterEvents.worldLoad.subscribe(() => {
         // meaning body temp swings more gently instead of just raising the
         // symptom threshold (that part is handled separately in effectsHandler).
         const currentBodyTemp = playerBodyTemp.get(player.id) ?? 37;
-        const bodyTempTarget = getBodyTempTarget(result.newTemp) + newActivityHeat;
+        const thirstNow = playerThirst.get(player.id) ?? THIRST_MAX;
+        const dehydrationSeverity = thirstNow >= 10 ? 0 : (10 - thirstNow) / 10;
+        const dehydrationAmplifier = 1 + dehydrationSeverity * 2;
+        const baseBodyTempTarget = getBodyTempTarget(result.newTemp) + newActivityHeat;
+        // ── Dehydration amplifies how far Body Temp is pulled toward heat —
+        // thirstier players overheat faster. Only applied on the heat side
+        // (above the 37°C baseline); cold-side targets are unaffected.
+        const bodyTempTarget = baseBodyTempTarget > 37
+            ? 37 + (baseBodyTempTarget - 37) * dehydrationAmplifier
+            : baseBodyTempTarget;
         const { coldBonus, heatBonus } = getArmorTempModifier(player);
         const insulation = coldBonus + heatBonus;
         const insulationFactor = Math.max(0.3, 1 - insulation / 100);
         const effectiveLerpRate = BODY_TEMP_LERP_RATE * insulationFactor;
+        const skinInsulationFactor = Math.max(0.5, 1 - insulation / 150);
         let newBodyTemp = calculateBodyTemp(currentBodyTemp, bodyTempTarget, effectiveLerpRate);
 
         // ── Personal burning — separate from nearby fire blocks. If the
@@ -332,15 +356,45 @@ world.afterEvents.worldLoad.subscribe(() => {
             newBodyTemp = Math.min(39.0, newBodyTemp + 0.5);
         }
 
+
+        // ── Fire Resistance — actively cools Body Temp back toward a safe
+        // baseline, not just blocking symptoms (that part still happens
+        // separately in effectsHandler.js). Skin (Feels Like) protection
+        // from fire/lava contact is handled below via hasFireResistance.
+
+        const hasFireResistance = player.getEffect("fire_resistance") !== undefined;
+        if (hasFireResistance && newBodyTemp > 37.5) {
+            newBodyTemp = Math.max(37.5, newBodyTemp - 0.6);
+        }
+
+        // ── Fire Protection / Frost Walker — suppress Body Temp itself
+        // (internal regulation from gear), but deliberately do NOT touch
+        // Feels Like/contactHeat/contactCold — skin sensation stays
+        // unaffected by these enchantments, unlike Fire Resistance above.
+        const fireProtCap = getFireProtectionCap(player);
+        if (fireProtCap > 0 && newBodyTemp > 38.0) {
+            newBodyTemp = Math.max(38.0, newBodyTemp - 0.3);
+        }
+        const frostWalkCap = getFrostWalkerCap(player);
+        if (frostWalkCap !== null && newBodyTemp < 36.0) {
+            newBodyTemp = Math.min(36.0, newBodyTemp + 0.3);
+        }
+
         playerBodyTemp.set(player.id, newBodyTemp);
 
-        // ── Contact heat — direct skin contact (fire/lava), separate from
+                // ── Contact heat — direct skin contact (fire/lava), separate from
         // ambient. Takes the worst single source rather than stacking them.
+        // Fire Resistance suppresses fire/lava-sourced heat specifically —
+        // your skin isn't actually burning, so it shouldn't feel like it.
         let contactHeat = 0;
-        if (result.inLava) contactHeat = 40;
-        else if (result.onFire) contactHeat = 15;
-        else if (result.nearLava) contactHeat = 12;
-        if (isPlayerBurning(player)) contactHeat = Math.max(contactHeat, 18);
+        if (!hasFireResistance) {
+            if (result.inLava) contactHeat = 40;
+            else if (result.onFire) contactHeat = 15;
+            else if (result.nearLava) contactHeat = 12;
+        }
+        if (isPlayerBurning(player) && !hasFireResistance) {
+            contactHeat = Math.max(contactHeat, 18);
+        }
 
         // ── Campfire warmth — standing near a lit campfire should be felt
         // personally (Feels Like) and, when close enough, actually warm the
@@ -363,7 +417,7 @@ world.afterEvents.worldLoad.subscribe(() => {
             contactHeat = Math.max(contactHeat, 20);
         }
 
-        playerContactHeat.set(player.id, contactHeat);
+        playerContactHeat.set(player.id, contactHeat * skinInsulationFactor);
 
         // ── Contact cold — snow/ice contact, symmetric to contactHeat above.
         // Takes the worst single source rather than stacking.
@@ -402,7 +456,7 @@ world.afterEvents.worldLoad.subscribe(() => {
             playerBurialTime.set(player.id, 0);
         }
 
-        playerContactCold.set(player.id, contactCold);
+        playerContactCold.set(player.id, contactCold * skinInsulationFactor);
 
         // ── Humidity — lags toward a biome/weather/indoor target ──────────
         const humidityTarget = getHumidityTarget(result.biomeKey, result.inWater, result.weather, result.indoors);
@@ -434,6 +488,12 @@ world.afterEvents.worldLoad.subscribe(() => {
         // ── Effects & damage ──────────────────────────────────────────────
         applyFrostbite(player, bodyC);
         applyHeatstroke(player, bodyC);
+        applyDehydration(player, thirstNow);
+
+        // ── Autosave — beforeEvents.playerLeave can't call setDynamicProperty
+        // (read-only mode), so persistence has to happen here instead, once
+        // per heavy-calc tick (~1/sec) rather than relying on a leave hook.
+        savePersistedState(player);
 
       } catch (e) {
         try {

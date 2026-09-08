@@ -72,7 +72,8 @@ export function savePersistedState(player) {
         const data = {
             temp: playerTemp.get(player.id) ?? SPAWN_TEMP,
             useFahrenheit: playerUseFahrenheit.get(player.id) ?? false,
-            lastBiome: playerLastBiome.get(player.id) ?? "plains"
+            lastBiome: playerLastBiome.get(player.id) ?? "plains",
+            thirst: playerThirst.get(player.id) ?? THIRST_MAX
         };
         player.setDynamicProperty(PERSIST_KEY, JSON.stringify(data));
     } catch { }
@@ -88,6 +89,7 @@ export function loadPersistedState(player) {
         if (typeof data.temp === "number") playerTemp.set(player.id, data.temp);
         if (typeof data.useFahrenheit === "boolean") playerUseFahrenheit.set(player.id, data.useFahrenheit);
         if (typeof data.lastBiome === "string") playerLastBiome.set(player.id, data.lastBiome);
+        if (typeof data.thirst === "number") playerThirst.set(player.id, data.thirst);
         return true;
     } catch { 
         return false;

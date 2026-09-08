@@ -30,7 +30,7 @@ export function roundToTenth(value) {
 // Returns +1 at midday (MC time 6000), -1 at midnight (MC time 18000).
 // Gradual rise from sunrise, gradual fall through sunset into night.
 export function getDailyTempCurve(time) {
-    return Math.sin(((time - 6000) / 24000) * Math.PI * 2 * -1);
+    return Math.cos(((time - 6000) / 24000) * Math.PI * 2);
 }
 
 // ── Main calculation — produces ACTUAL TEMP ────────────────────────────────
@@ -111,6 +111,7 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time, wo
         else if (weather === "rain") {
             target -= biome.default <= 0 ? 14 : 6;
         }
+        target = Math.max(biome.min - 10, Math.min(biome.max + 5, target));
     }
 
     // ── Indoors moderates temperature toward biome-aware comfort ──────────────
@@ -133,6 +134,9 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time, wo
     if (campfire === "on") target += 35;
     else if (campfire === "close") target += 18;
     else if (campfire === "near") target += 8;
+    if (!inLava && !nearLava && !onMagma) {
+        target = Math.min(biome.max + 5, target);
+    }
 
     // ── Global safety clamp ───────────────────────────────────────────────────
     target = Math.max(-273, Math.min(200, target));

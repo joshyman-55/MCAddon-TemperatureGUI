@@ -8,7 +8,7 @@
     "color": [1, 1, 1],
     "anchor_from": "bottom_middle",
     "anchor_to": "bottom_middle",
-    "offset": [-45, -45],
+    "offset": [-48, -45],
     "layer": 10,
 
     "$update_string": "THIRSTBAR:",

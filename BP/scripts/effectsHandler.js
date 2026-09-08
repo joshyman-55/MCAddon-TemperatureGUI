@@ -87,6 +87,27 @@ export function applyFrostbite(player, bodyC) {
     if (bodyC <= 32.0) player.applyDamage(4, { cause: "freezing" });
 }
 
+// ── Dehydration ───────────────────────────────────────────────────────────────
+// Kicks in below half thirst (10/20). Escalates to Nausea III (matching
+// heatstroke's own ceiling) at thirst = 0. Body Temp amplification is
+// handled separately in main.js, where the target is computed.
+
+export function applyDehydration(player, thirst) {
+    if (thirst >= 10) return;
+
+    if (thirst <= 0) {
+        player.addEffect("nausea", 100, { amplifier: 2, showParticles: true });
+        player.addEffect("weakness", 100, { amplifier: 1, showParticles: true });
+    } else if (thirst <= 3) {
+        player.addEffect("nausea", 100, { amplifier: 1, showParticles: true });
+        player.addEffect("weakness", 60, { amplifier: 0, showParticles: true });
+    } else if (thirst <= 6) {
+        player.addEffect("nausea", 100, { amplifier: 0, showParticles: true });
+    } else {
+        player.addEffect("weakness", 60, { amplifier: 0, showParticles: true });
+    }
+}
+
 // ── Heatstroke ────────────────────────────────────────────────────────────────
 // Heat accumulates when body temp ≥ 39.5°C and is slowed when hydration charges > 0.
 // Crossing HEATSTROKE_THRESHOLD triggers nausea.
