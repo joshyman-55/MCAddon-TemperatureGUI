@@ -14,7 +14,7 @@
 		}
 	},
 	"header": {
-		"name": "pack.name",
+		"name": "Temperature System RP",
 		"description": "pack.description",
 		"min_engine_version": [
 			1,

@@ -31,6 +31,8 @@ export const playerThirstExhaustion = new Map();
 export const playerLastBiome = new Map();
 // Display preference — false = °C, true = °F
 export const playerUseFahrenheit = new Map();
+// Display preference — "12" | "24" | "military"
+export const playerTimeFormat = new Map();
 // Respawn grace period (ticks) — suppresses lerp after death so temp stays near SPAWN_TEMP
 export const playerRespawnGrace = new Map();
 // Temperature saved just before death — restored after grace period ends (except fire/lava deaths)
@@ -59,6 +61,7 @@ export const EXHAUSTION_JUMP = 0.2;
 export const EXHAUSTION_SPRINT_JUMP = 0.8;
 export const EXHAUSTION_MINE_BLOCK = 0.005;
 export const EXHAUSTION_PER_DAMAGE = 0.1; // multiplied by damage amount
+export const EXHAUSTION_DRY_AIR = 0.6;
 
 // ── Comfortable spawn temperature ─────────────────────────────────────────────
 export const SPAWN_TEMP = 18;
@@ -72,6 +75,7 @@ export function savePersistedState(player) {
         const data = {
             temp: playerTemp.get(player.id) ?? SPAWN_TEMP,
             useFahrenheit: playerUseFahrenheit.get(player.id) ?? false,
+            timeFormat: playerTimeFormat.get(player.id) ?? "12",
             lastBiome: playerLastBiome.get(player.id) ?? "plains",
             thirst: playerThirst.get(player.id) ?? THIRST_MAX
         };
@@ -88,6 +92,7 @@ export function loadPersistedState(player) {
         const data = JSON.parse(raw);
         if (typeof data.temp === "number") playerTemp.set(player.id, data.temp);
         if (typeof data.useFahrenheit === "boolean") playerUseFahrenheit.set(player.id, data.useFahrenheit);
+        if (typeof data.timeFormat === "string") playerTimeFormat.set(player.id, data.timeFormat);
         if (typeof data.lastBiome === "string") playerLastBiome.set(player.id, data.lastBiome);
         if (typeof data.thirst === "number") playerThirst.set(player.id, data.thirst);
         return true;
@@ -120,6 +125,9 @@ export function ensurePlayerState(player) {
         // Restore saved preference — persists through death and rejoining
         playerUseFahrenheit.set(player.id, false);
     }
+    if (!playerTimeFormat.has(player.id)) {
+        playerTimeFormat.set(player.id, "12");
+    }
 }
 
 // ── Clean up state when a player leaves ──────────────────────────────────────
@@ -136,6 +144,7 @@ export function clearPlayerState(playerId) {
     playerHydration.delete(playerId);
     playerLastBiome.delete(playerId);
     playerUseFahrenheit.delete(playerId);
+    playerTimeFormat.delete(playerId);
     playerRespawnGrace.delete(playerId);
     playerPreDeathTemp.delete(playerId);
     playerFireSpike.delete(playerId);

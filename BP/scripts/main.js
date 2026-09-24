@@ -12,8 +12,8 @@ import {
   playerTemp, playerBodyTemp, playerHumidity,playerUV, playerColdTime, playerHeatTime, playerHydration,
   playerThirst, playerThirstExhaustion, THIRST_MAX, THIRST_EXHAUSTION_THRESHOLD,
   EXHAUSTION_SPRINT, EXHAUSTION_JUMP, EXHAUSTION_SPRINT_JUMP,
-  EXHAUSTION_MINE_BLOCK, EXHAUSTION_PER_DAMAGE,
-  playerLastBiome, playerUseFahrenheit, SPAWN_TEMP,
+  EXHAUSTION_MINE_BLOCK, EXHAUSTION_PER_DAMAGE, EXHAUSTION_DRY_AIR,
+  playerLastBiome, playerUseFahrenheit, playerTimeFormat, SPAWN_TEMP,
   playerRespawnGrace, RESPAWN_GRACE_TICKS, playerPreDeathTemp,
   BODY_TEMP_LERP_RATE, HUMIDITY_LERP_RATE,
   playerFireSpike, playerSnowSpike, playerBurialTime, playerActivityHeat,
@@ -73,18 +73,6 @@ world.afterEvents.worldLoad.subscribe(() => {
     return "§fClear";
   }
 
-  function getThirstBarString(thirst) {
-    const fullDroplets = Math.floor(thirst / 2);
-    const hasHalf = thirst % 2 === 1;
-    let bar = "";
-    for (let i = 0; i < 10; i++) {
-      if (i < fullDroplets) bar += "\uE000";
-      else if (i === fullDroplets && hasHalf) bar += "\uE001";
-      else bar += "\uE002";
-    }
-    return bar;
-  }
-
   function getTimeColor(time) {
     if (time >= 23000 || time < 1000) return "§6";
     if (time < 11000) return "§e";
@@ -99,6 +87,20 @@ world.afterEvents.worldLoad.subscribe(() => {
     const ampm = hours >= 12 ? "PM" : "AM";
     hours = hours % 12 || 12;
     return `${hours}:${mins < 10 ? "0" : ""}${mins} ${ampm}`;
+  }
+
+  function getTimeString24(time) {
+    const totalMinutes = ((time + 6000) % 24000) / 24000 * 1440;
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const mins = Math.floor(totalMinutes % 60);
+    return `${hours}:${mins < 10 ? "0" : ""}${mins}`;
+  }
+
+  function getTimeStringMilitary(time) {
+    const totalMinutes = ((time + 6000) % 24000) / 24000 * 1440;
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const mins = Math.floor(totalMinutes % 60);
+    return `${hours < 10 ? "0" : ""}${hours}:${mins < 10 ? "0" : ""}${mins}`;
   }
 
   function addThirstExhaustion(player, amount) {
@@ -207,7 +209,7 @@ world.afterEvents.worldLoad.subscribe(() => {
     world.sendMessage("§e[Warn] playerSleepStateChange unavailable: " + e);
   }
 
-  world.afterEvents.itemUse.subscribe((event) => {
+  world.afterEvents.itemCompleteUse.subscribe((event) => {
     const item = event.itemStack;
     const source = event.source;
 
@@ -220,7 +222,7 @@ world.afterEvents.worldLoad.subscribe(() => {
       if (charges < 3) playerHydration.set(source.id, charges + 1);
 
       const currentThirst = playerThirst.get(source.id) ?? THIRST_MAX;
-      playerThirst.set(source.id, Math.min(THIRST_MAX, currentThirst + 6));
+      playerThirst.set(source.id, Math.min(THIRST_MAX, currentThirst + 2));
     }
   });
 
@@ -234,6 +236,104 @@ world.afterEvents.worldLoad.subscribe(() => {
     const damage = event.damage ?? 0;
     addThirstExhaustion(entity, damage * EXHAUSTION_PER_DAMAGE);
   });
+
+  // ── Chat-command unit toggle — ;celsius / ;c / ;fahrenheit / ;f, mirrors
+  // the /function tag toggle but as a WorldEdit-style chat shortcut. Cancelled
+  // so the raw command doesn't broadcast to everyone else in chat. The actual
+  // tag mutation is deferred to system.run() since chatSend fires in
+  // restricted-execution mode — same reason setDynamicProperty had to move
+  // out of beforeEvents.playerLeave earlier.
+  try {
+    world.beforeEvents.chatSend.subscribe((event) => {
+      // event.sender.sendMessage("§d[DEBUG] chatSend fired: " + event.message);
+      const msg = event.message.trim().toLowerCase();
+      const sender = event.sender;
+      const hasCelsius = msg === ";c" || msg === ";celsius" || msg.includes("celsius");
+      const hasFahrenheit = msg === ";f" || msg === ";fahrenheit" || msg.includes("fahrenheit");
+      const isSwitchCmd = msg.startsWith(";switch") || hasCelsius || hasFahrenheit;
+
+      if (isSwitchCmd) {
+        if (hasCelsius && hasFahrenheit) {
+          event.cancel = true;
+          system.run(() => {
+            sender.sendMessage("§cSay just one: try \";c\" for Celsius or \";f\" for Fahrenheit.");
+          });
+        } else if (hasCelsius) {
+          event.cancel = true;
+          system.run(() => {
+            if (sender.hasTag("tempunit_c")) {
+              sender.sendMessage("§bYou're already set to Celsius (°C).");
+              return;
+            }
+            sender.removeTag("tempunit_f");
+            sender.addTag("tempunit_c");
+            sender.sendMessage("§bTemperature unit set to Celsius (°C)");
+          });
+        } else if (hasFahrenheit) {
+          event.cancel = true;
+          system.run(() => {
+            if (sender.hasTag("tempunit_f")) {
+              sender.sendMessage("§6You're already set to Fahrenheit (°F).");
+              return;
+            }
+            sender.removeTag("tempunit_c");
+            sender.addTag("tempunit_f");
+            sender.sendMessage("§6Temperature unit set to Fahrenheit (°F)");
+          });
+        }
+      }
+
+      const hasMilitary = msg === ";military" || msg === ";mil" || msg.includes("military");
+      const has24 = msg === ";24h" || msg.includes("24h") || msg.includes("24-hour") || msg.includes("24 hour");
+      const has12h = msg === ";12h" || msg.includes("12h") || msg.includes("12-hour") || msg.includes("12 hour");
+      const isClockCmd = msg.startsWith(";switch") || hasMilitary || has24 || has12h;
+
+      if (!isClockCmd) return;
+
+      const clockPicks = [hasMilitary, has24, has12h].filter(Boolean).length;
+      if (clockPicks > 1) {
+        event.cancel = true;
+        system.run(() => {
+          sender.sendMessage("§cSay just one: try \";24h\", \";military\", or \";12h\".");
+        });
+      } else if (hasMilitary) {
+        event.cancel = true;
+        system.run(() => {
+          if (sender.hasTag("timemil")) {
+            sender.sendMessage("§bYou're already set to military time.");
+            return;
+          }
+          sender.removeTag("time12"); sender.removeTag("time24");
+          sender.addTag("timemil");
+          sender.sendMessage("§bClock set to military (00:00)");
+        });
+      } else if (has24) {
+        event.cancel = true;
+        system.run(() => {
+          if (sender.hasTag("time24")) {
+            sender.sendMessage("§bYou're already set to 24-hour.");
+            return;
+          }
+          sender.removeTag("time12"); sender.removeTag("timemil");
+          sender.addTag("time24");
+          sender.sendMessage("§bClock set to 24-hour (0:00)");
+        });
+      } else if (has12h) {
+        event.cancel = true;
+        system.run(() => {
+          if (sender.hasTag("time12")) {
+            sender.sendMessage("§bYou're already set to 12-hour.");
+            return;
+          }
+          sender.removeTag("time24"); sender.removeTag("timemil");
+          sender.addTag("time12");
+          sender.sendMessage("§bClock set to 12-hour");
+        });
+      }
+    });
+  } catch (e) {
+    world.sendMessage("§e[Warn] chatSend unavailable — ;c/;f/;24h/etc. need Beta APIs enabled: " + e);
+  }
 
   // ── Main tick ─────────────────────────────────────────────────────────────────
 
@@ -271,6 +371,12 @@ world.afterEvents.worldLoad.subscribe(() => {
         const time = world.getTimeOfDay();
         const simTemp = playerTemp.get(player.id);
         const useFahrenheit = playerUseFahrenheit.get(player.id);
+        const timeFormat = playerTimeFormat.get(player.id) ?? "12";
+        const timeString = timeFormat === "military"
+          ? getTimeStringMilitary(time)
+          : timeFormat === "24"
+          ? getTimeString24(time)
+          : getTimeString(time);
 
         // ── Smooth HUD display — lerps every tick toward simulation temp ──
         // Fast enough to feel responsive, slow enough to avoid skipping
@@ -300,9 +406,10 @@ world.afterEvents.worldLoad.subscribe(() => {
 
         player.onScreenDisplay.setActionBar(
           `§fTemp: ${getTempColor(smoothDisplay)}${displayValue}${unit} §7(Feels ${getTempColor(feelsLikeValue)}${feelsLikeDisplay}${unit}§7)  ` +
-          `${getTimeColor(time)}${getTimeString(time)}\n` +
+          `${getTimeColor(time)}${timeString}\n` +
           `§fBody: ${getTempColor(bodyTempValue)}${bodyTempDisplay}${unit}  ` +
-          `§3Humidity: ${Math.round(humidityValue)}%  ${getWeatherString(weatherValue)}`
+          `§3Humidity: ${Math.round(humidityValue)}%  ${getWeatherString(weatherValue)} ` +
+          `§9Thirst: ${thirstDisplay}/${THIRST_MAX}`
         );
 
         if (!doHeavyCalc) continue;
@@ -313,6 +420,13 @@ world.afterEvents.worldLoad.subscribe(() => {
         const hasC = player.hasTag("tempunit_c");
         if (hasF) playerUseFahrenheit.set(player.id, true);
         else if (hasC) playerUseFahrenheit.set(player.id, false);
+
+        const timeTagMil = player.hasTag("timemil");
+        const timeTag24 = player.hasTag("time24");
+        const timeTag12 = player.hasTag("time12");
+        if (timeTagMil) playerTimeFormat.set(player.id, "military");
+        else if (timeTag24) playerTimeFormat.set(player.id, "24");
+        else if (timeTag12) playerTimeFormat.set(player.id, "12");
 
         // ── Temperature calculation — once per second ─────────────────────
         const uv = playerUV.get(player.id);
@@ -465,22 +579,14 @@ world.afterEvents.worldLoad.subscribe(() => {
         playerHumidity.set(player.id, newHumidity);
         playerLastWeather.set(player.id, result.weather);
 
+        const dryness = Math.max(0, (30 - newHumidity) / 30);
+        if (dryness > 0) {
+          addThirstExhaustion(player, dryness * EXHAUSTION_DRY_AIR);
+        }
+
         // ── Feels Like (heavy-calc copy, unused for display) — kept for
         // parity/logging; the action bar recomputes its own every tick
         const feelsLike = calculateFeelsLike(result.newTemp, newHumidity, 0, contactHeat + contactCold);
-
-        // ── Thirst bar — sent as an invisible title, read by a custom JSON UI
-        // panel docked above the hotbar. stayDuration 0 keeps it from ever
-        // flashing on screen; the "THIRSTBAR:" prefix lets the UI filter this
-        // out from real game titles (achievements, death screen, etc).
-        const thirstBar = getThirstBarString(playerThirst.get(player.id) ?? THIRST_MAX);
-        try {
-          player.onScreenDisplay.setTitle(`THIRSTBAR:${thirstBar}` , {
-            stayDuration: 0,
-            fadeInDuration: 0,
-            fadeOutDuration: 0
-          });
-        } catch { }
 
         const displayC = Math.round(result.newTemp);
         const bodyC = roundToTenth(newBodyTemp);
