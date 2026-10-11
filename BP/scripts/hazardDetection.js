@@ -87,6 +87,9 @@ export function isIndoors(player) {
                 id === "minecraft:void_air" ||
                 id.includes("leaves") ||
                 id.includes("glass")) continue;
+            // Non-solid blocks (torches, signs, plants, vines, water, cobweb...) aren't a roof.
+            // Strict === false so a missing isSolid property can't make everything count as open air.
+            if (block.isSolid === false) continue;
             return true;
         } catch { }
     }
@@ -127,9 +130,23 @@ export function getSnowContact(player, isSpecialDim) {
     // ── Powder snow — player is inside the block ──────────────────────────────
     const inPowderSnow = blockAt?.typeId === "minecraft:powder_snow";
 
-    // ── Buried in snow blocks ─────────────────────────────────────────────────
-    const buriedInSnow = !inPowderSnow && !onIce && !onPackedIce && !onBlueIce &&
-        countBlocks(player, ["minecraft:snow_block"], 2) >= 4;
+    // ── Buried in snow blocks — the player must actually be ENCLOSED: snow_block
+    // on the sides at feet AND head level (up to 8) plus the block above. Merely
+    // standing near a few snow blocks no longer counts. ─────────────────────────
+    const isSnowAt = (dx, dy, dz) => {
+        try {
+            return player.dimension.getBlock({ x: px + dx, y: py + dy, z: pz + dz })?.typeId === "minecraft:snow_block";
+        } catch { return false; }
+    };
+    let enclosed = 0;
+    for (const dy of [0, 1]) {
+        if (isSnowAt(1, dy, 0)) enclosed++;
+        if (isSnowAt(-1, dy, 0)) enclosed++;
+        if (isSnowAt(0, dy, 1)) enclosed++;
+        if (isSnowAt(0, dy, -1)) enclosed++;
+    }
+    if (isSnowAt(0, 2, 0)) enclosed++;
+    const buriedInSnow = !inPowderSnow && !onIce && !onPackedIce && !onBlueIce && enclosed >= 6;
 
     // ── Standing on snow layer ────────────────────────────────────────────────
     const onSnowLayer = !inPowderSnow && !onIce && !onPackedIce && !onBlueIce && (() => {
@@ -178,12 +195,9 @@ export function getCampfireProximity(player) {
 // Returns the temperature (°C) of the water the player is currently in,
 // based on surrounding blocks (ice, coral, sand, jungle, etc.).
 
-export function getWaterTemp(player) {
-    const iceBlocks = [
-        "minecraft:blue_ice", "minecraft:packed_ice", "minecraft:ice",
-        "minecraft:snow_block", "minecraft:powder_snow"
-    ];
-    const iceCount = countBlocks(player, iceBlocks, 6);
+// `iceCount` is the result of getNearbyIceCount(player), computed once by the caller
+// and shared with the lerp-rate logic so the area is only scanned once.
+export function getWaterTemp(player, iceCount) {
     if (iceCount >= 10) return -8;
     if (iceCount >= 4) return -3;
     if (iceCount >= 1) return 1;

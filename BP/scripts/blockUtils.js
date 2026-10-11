@@ -1,6 +1,6 @@
 // ── blockUtils.js ─────────────────────────────────────────────────────────────
 // Low-level block scanning utilities shared by all other modules.
-// Imported by: biomeDetection.js, hazardDetection.js, tempCalculator.js
+// Imported by: hazardDetection.js, tempCalculator.js, main.js (debug stick)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -79,7 +79,7 @@ export function getDistanceToGround(player) {
 
 /**
  * Scans a wide area around the player to build a set of block IDs
- * near ground level. Used by the block-vote biome fallback.
+ * near ground level. Only used by the debug stick in main.js now.
  * Returns { foundIds: Set<string>, groundY: number }
  */
 export function getNearestGroundBlocks(player, radius, depthSearch = 50) {

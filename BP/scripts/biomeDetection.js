@@ -1,8 +1,8 @@
 // ── biomeDetection.js ─────────────────────────────────────────────────────────
 // Detects which BIOME_DATA key applies to the player's current position.
 // Primary method: Minecraft's native getBiome() API.
-// Fallback: block-vote scan when API is unavailable or returns an unknown ID.
-// Imported by: tempCalculator.js, temperatureGUI.js
+// Fallback: returns the last known biome key when the API is unavailable or the ID is unknown.
+// Imported by: tempCalculator.js, main.js
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Native biome detection (primary) ─────────────────────────────────────────
@@ -106,13 +106,13 @@ export function getBiomeKey(player, lastBiomeKey = "plains") {
             "minecraft:extreme_hills_mutated", "minecraft:extreme_hills_edge"].includes(id)) return "hills";
 
         if (["minecraft:plains", "minecraft:sunflower_plains", "minecraft:meadow",
-            "minecraft:river", "minecraft:frozen_river"].includes(id)) return "plains";
+            "minecraft:river"].includes(id)) return "plains"; // frozen_river is matched earlier as "frozen"
 
-        // Unknown biome ID — fall back to block voting
+        // Unknown biome ID — keep the last known biome
         return lastBiomeKey;
 
     } catch {
-        // getBiome() not available — fall back to block voting
+        // getBiome() not available — keep the last known biome
         return lastBiomeKey;
     }
 }

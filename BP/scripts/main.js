@@ -1,5 +1,5 @@
 // ── main.js ───────────────────────────────────────────────────────────────────
-// 26.5 ENTRY POINT — registered in manifest.json as scripts.entry_point.
+// 26.5.2 ENTRY POINT — registered in manifest.json as scripts.entry_point.
 // Modern era rewrite: API 2.x, dynamic properties, native getBiome() only.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -11,7 +11,7 @@ import { getNearestGroundBlocks } from "./blockUtils.js";
 import {
   playerTemp, playerBodyTemp, playerHumidity,playerUV, playerColdTime, playerHeatTime, playerHydration,
   playerThirst, playerThirstExhaustion, THIRST_MAX, THIRST_EXHAUSTION_THRESHOLD,
-  EXHAUSTION_SPRINT, EXHAUSTION_JUMP, EXHAUSTION_SPRINT_JUMP,
+  EXHAUSTION_SPRINT, /* EXHAUSTION_JUMP, EXHAUSTION_SPRINT_JUMP, */
   EXHAUSTION_MINE_BLOCK, EXHAUSTION_PER_DAMAGE, EXHAUSTION_DRY_AIR,
   playerLastBiome, playerUseFahrenheit, playerTimeFormat, SPAWN_TEMP,
   playerRespawnGrace, RESPAWN_GRACE_TICKS, playerPreDeathTemp,
@@ -27,7 +27,7 @@ import { registerSnowballEffect } from "./snowballEffect.js";
 import { registerFireEnchantEffect } from "./fireEnchantsEffect.js";
 
 world.afterEvents.worldLoad.subscribe(() => {
-  world.sendMessage("§a[TempGUI] v26.5 loaded!");
+  world.sendMessage("§a[TempGUI] v26.5.2 loaded!");
 
   registerSnowballEffect();
   registerFireEnchantEffect();
@@ -39,10 +39,17 @@ world.afterEvents.worldLoad.subscribe(() => {
   const playerDisplayTemp = new Map();
   const playerRestoreDone = new Set();
   const playerLastWeather = new Map();
-  // ── World weather tracking — player.dimension.getWeather() is not a
-  // callable function on this game version, so we track weather changes
-  // via the event instead, which is confirmed to exist and work.
+  const playerSleepResetDay = new Map(); // one sleep temp-reset per night per player
+  // ── World weather tracking — tracked via the weatherChange event, and
+  // seeded once at world load if dimension.getWeather() is available on this
+  // game version (if not, it stays "clear" until the first weather change).
   let currentWorldWeather = "clear";
+  try {
+    const w0 = world.getDimension("overworld").getWeather();
+    currentWorldWeather = w0 === "Thunder" ? "thunder"
+      : w0 === "Rain" ? "rain"
+      : "clear";
+  } catch { /* getWeather unavailable — stays "clear" until first weatherChange */ }
   try {
     world.afterEvents.weatherChange.subscribe((event) => {
       const w = event.newWeather;
@@ -54,7 +61,7 @@ world.afterEvents.worldLoad.subscribe(() => {
     world.sendMessage("§e[Warn] weatherChange event unavailable: " + e);
   }
   const playerContactHeat = new Map();
-  const playerContactCold = new Map(); 
+  const playerContactCold = new Map();
 
   // ── HUD color helpers ─────────────────────────────────────────────────────────
 
@@ -121,7 +128,7 @@ world.afterEvents.worldLoad.subscribe(() => {
   world.afterEvents.playerSpawn.subscribe((event) => {
     const isNew = !playerTemp.has(event.player.id);
     ensurePlayerState(event.player);
-    
+
     let restored = false;
     if (isNew) {
       playerRestoreDone.add(event.player.id);
@@ -156,6 +163,11 @@ world.afterEvents.worldLoad.subscribe(() => {
       playerBodyTemp.set(event.player.id, 37);
       playerHumidity.set(event.player.id, 50);
 
+      // ── Thirst — respawn with a full bar (like vanilla hunger), otherwise
+      // you'd respawn still nauseous/weak from dehydration.
+      playerThirst.set(event.player.id, THIRST_MAX);
+      playerThirstExhaustion.set(event.player.id, 0);
+
       playerTemp.set(event.player.id, spawnTemp);
       playerDisplayTemp.set(event.player.id, spawnTemp);
       playerUV.set(event.player.id, 0);
@@ -169,7 +181,11 @@ world.afterEvents.worldLoad.subscribe(() => {
   world.afterEvents.playerLeave.subscribe((event) => {
     clearPlayerState(event.playerId);
     playerDisplayTemp.delete(event.playerId);
-    playerRestoreDone.delete(event.playerId); 
+    playerRestoreDone.delete(event.playerId);
+    playerContactHeat.delete(event.playerId);
+    playerContactCold.delete(event.playerId);
+    playerLastWeather.delete(event.playerId);
+    playerSleepResetDay.delete(event.playerId);
   });
 
   // Save temp and biome before death — fire and lava deaths don't restore
@@ -190,11 +206,16 @@ world.afterEvents.worldLoad.subscribe(() => {
     }
   });
 
-  // Sleeping resets temperature to a comfortable biome-appropriate value
+  // Sleeping resets temperature to a comfortable biome-appropriate value —
+  // limited to once per night per player so entering/leaving a bed repeatedly
+  // can't be used as an infinite temperature reset.
   try {
     world.afterEvents.playerSleepStateChange.subscribe((event) => {
       if (!event.isSleeping) return;
       const player = event.player;
+      const day = Math.floor(world.getAbsoluteTime() / 24000);
+      if (playerSleepResetDay.get(player.id) === day) return;
+      playerSleepResetDay.set(player.id, day);
       const key = getBiomeKey(player, playerLastBiome.get(player.id));
       const biome = BIOME_DATA[key] ?? BIOME_DATA.plains;
       const reset = Math.max(biome.min, Math.min(biome.max,
@@ -209,21 +230,35 @@ world.afterEvents.worldLoad.subscribe(() => {
     world.sendMessage("§e[Warn] playerSleepStateChange unavailable: " + e);
   }
 
+  // ── Drinking — water bottles and milk hydrate (+2 thirst, +1 hydration
+  // charge). Other potions (healing, poison, etc.) do not.
   world.afterEvents.itemCompleteUse.subscribe((event) => {
     const item = event.itemStack;
     const source = event.source;
+    if (!item || !source || !playerHydration.has(source.id)) return;
 
-    // Drinking water / potions adds hydration charges (max 3)
-    if (item?.typeId === "minecraft:potion" ||
-      item?.typeId === "minecraft:water_bucket" ||
-      item?.typeId === "minecraft:glass_bottle") {
-      if (!source || !playerHydration.has(source.id)) return;
-      const charges = playerHydration.get(source.id) ?? 0;
-      if (charges < 3) playerHydration.set(source.id, charges + 1);
+    let hydrates = false;
 
-      const currentThirst = playerThirst.get(source.id) ?? THIRST_MAX;
-      playerThirst.set(source.id, Math.min(THIRST_MAX, currentThirst + 2));
+    if (item.typeId === "minecraft:milk_bucket") {
+      hydrates = true;
+    } else if (item.typeId === "minecraft:potion") {
+      try {
+        const pot = item.getComponent("minecraft:potion");
+        const id = String(pot?.potionEffectType?.id ?? "").toLowerCase();
+        // source.sendMessage("§7[DEBUG] potion id: " + id); // uncomment once to see the real id string
+        hydrates = id === "water"; // exact match so "water_breathing" doesn't count
+      } catch {
+        hydrates = false; // component unavailable → don't hydrate
+      }
     }
+
+    if (!hydrates) return;
+
+    const charges = playerHydration.get(source.id) ?? 0;
+    if (charges < 3) playerHydration.set(source.id, charges + 1);
+
+    const currentThirst = playerThirst.get(source.id) ?? THIRST_MAX;
+    playerThirst.set(source.id, Math.min(THIRST_MAX, currentThirst + 2));
   });
 
   world.afterEvents.playerBreakBlock.subscribe((event) => {
@@ -237,102 +272,91 @@ world.afterEvents.worldLoad.subscribe(() => {
     addThirstExhaustion(entity, damage * EXHAUSTION_PER_DAMAGE);
   });
 
-  // ── Chat-command unit toggle — ;celsius / ;c / ;fahrenheit / ;f, mirrors
-  // the /function tag toggle but as a WorldEdit-style chat shortcut. Cancelled
-  // so the raw command doesn't broadcast to everyone else in chat. The actual
-  // tag mutation is deferred to system.run() since chatSend fires in
-  // restricted-execution mode — same reason setDynamicProperty had to move
-  // out of beforeEvents.playerLeave earlier.
+  // ── Chat commands (STRICT) — only ";temp <unit>" and ";time <format>" are
+  // recognised. Everything else is left alone as normal chat. Tag changes are
+  // deferred to system.run() because chatSend fires in restricted-execution mode.
+  //   ;temp celsius | fahrenheit
+  //   ;time 12h | 24h | military
   try {
     world.beforeEvents.chatSend.subscribe((event) => {
-      // event.sender.sendMessage("§d[DEBUG] chatSend fired: " + event.message);
-      const msg = event.message.trim().toLowerCase();
+      // STRICT: lowercase, trim, and collapse repeated spaces so ";temp   celsius" still works
+      const msg = event.message.trim().toLowerCase().replace(/\s+/g, " ");
       const sender = event.sender;
-      const hasCelsius = msg === ";c" || msg === ";celsius" || msg.includes("celsius");
-      const hasFahrenheit = msg === ";f" || msg === ";fahrenheit" || msg.includes("fahrenheit");
-      const isSwitchCmd = msg.startsWith(";switch") || hasCelsius || hasFahrenheit;
 
-      if (isSwitchCmd) {
-        if (hasCelsius && hasFahrenheit) {
-          event.cancel = true;
-          system.run(() => {
-            sender.sendMessage("§cSay just one: try \";c\" for Celsius or \";f\" for Fahrenheit.");
-          });
-        } else if (hasCelsius) {
-          event.cancel = true;
-          system.run(() => {
-            if (sender.hasTag("tempunit_c")) {
-              sender.sendMessage("§bYou're already set to Celsius (°C).");
+      // STRICT: must start with ";temp" or ";time" followed by a space or end of message.
+      // ";temperature", ";timer", ";c", ";f", ";switch" all fall through as normal chat.
+      const isTemp = /^;temp( |$)/.test(msg);
+      const isTime = /^;time( |$)/.test(msg);
+      if (!isTemp && !isTime) return;
+
+      event.cancel = true; // hide the command from public chat
+
+      system.run(() => {
+        try {
+          // ── ;temp ─────────────────────────────────────────────────────────
+          if (isTemp) {
+            if (msg === ";temp celsius") {
+              if (sender.hasTag("tempunit_c")) {
+                sender.sendMessage("§bYou're already set to Celsius (°C).");
+                return;
+              }
+              sender.removeTag("tempunit_f");
+              sender.addTag("tempunit_c");
+              playerUseFahrenheit.set(sender.id, false);    // apply instantly, no 1s tick wait
+              sender.sendMessage("§bTemperature unit set to Celsius (°C)");
+            } else if (msg === ";temp fahrenheit") {
+              if (sender.hasTag("tempunit_f")) {
+                sender.sendMessage("§6You're already set to Fahrenheit (°F).");
+                return;
+              }
+              sender.removeTag("tempunit_c");
+              sender.addTag("tempunit_f");
+              playerUseFahrenheit.set(sender.id, true);     // apply instantly
+              sender.sendMessage("§6Temperature unit set to Fahrenheit (°F)");
+            } else {
+              sender.sendMessage("§cUsage: ;temp celsius | fahrenheit");
+            }
+            return;
+          }
+
+          // ── ;time ─────────────────────────────────────────────────────────
+          if (msg === ";time 12h") {
+            if (sender.hasTag("time12")) {
+              sender.sendMessage("§bYou're already set to 12-hour.");
               return;
             }
-            sender.removeTag("tempunit_f");
-            sender.addTag("tempunit_c");
-            sender.sendMessage("§bTemperature unit set to Celsius (°C)");
-          });
-        } else if (hasFahrenheit) {
-          event.cancel = true;
-          system.run(() => {
-            if (sender.hasTag("tempunit_f")) {
-              sender.sendMessage("§6You're already set to Fahrenheit (°F).");
+            sender.removeTag("time24"); sender.removeTag("timemil");
+            sender.addTag("time12");
+            playerTimeFormat.set(sender.id, "12");          // apply instantly
+            sender.sendMessage("§bClock set to 12-hour");
+          } else if (msg === ";time 24h") {
+            if (sender.hasTag("time24")) {
+              sender.sendMessage("§bYou're already set to 24-hour.");
               return;
             }
-            sender.removeTag("tempunit_c");
-            sender.addTag("tempunit_f");
-            sender.sendMessage("§6Temperature unit set to Fahrenheit (°F)");
-          });
+            sender.removeTag("time12"); sender.removeTag("timemil");
+            sender.addTag("time24");
+            playerTimeFormat.set(sender.id, "24");
+            sender.sendMessage("§bClock set to 24-hour (0:00)");
+          } else if (msg === ";time military") {
+            if (sender.hasTag("timemil")) {
+              sender.sendMessage("§bYou're already set to military time.");
+              return;
+            }
+            sender.removeTag("time12"); sender.removeTag("time24");
+            sender.addTag("timemil");
+            playerTimeFormat.set(sender.id, "military");
+            sender.sendMessage("§bClock set to military (00:00)");
+          } else {
+            sender.sendMessage("§cUsage: ;time 12h | 24h | military");
+          }
+        } catch (err) {
+          // sender may be invalid if they left before this ran — ignore
         }
-      }
-
-      const hasMilitary = msg === ";military" || msg === ";mil" || msg.includes("military");
-      const has24 = msg === ";24h" || msg.includes("24h") || msg.includes("24-hour") || msg.includes("24 hour");
-      const has12h = msg === ";12h" || msg.includes("12h") || msg.includes("12-hour") || msg.includes("12 hour");
-      const isClockCmd = msg.startsWith(";switch") || hasMilitary || has24 || has12h;
-
-      if (!isClockCmd) return;
-
-      const clockPicks = [hasMilitary, has24, has12h].filter(Boolean).length;
-      if (clockPicks > 1) {
-        event.cancel = true;
-        system.run(() => {
-          sender.sendMessage("§cSay just one: try \";24h\", \";military\", or \";12h\".");
-        });
-      } else if (hasMilitary) {
-        event.cancel = true;
-        system.run(() => {
-          if (sender.hasTag("timemil")) {
-            sender.sendMessage("§bYou're already set to military time.");
-            return;
-          }
-          sender.removeTag("time12"); sender.removeTag("time24");
-          sender.addTag("timemil");
-          sender.sendMessage("§bClock set to military (00:00)");
-        });
-      } else if (has24) {
-        event.cancel = true;
-        system.run(() => {
-          if (sender.hasTag("time24")) {
-            sender.sendMessage("§bYou're already set to 24-hour.");
-            return;
-          }
-          sender.removeTag("time12"); sender.removeTag("timemil");
-          sender.addTag("time24");
-          sender.sendMessage("§bClock set to 24-hour (0:00)");
-        });
-      } else if (has12h) {
-        event.cancel = true;
-        system.run(() => {
-          if (sender.hasTag("time12")) {
-            sender.sendMessage("§bYou're already set to 12-hour.");
-            return;
-          }
-          sender.removeTag("time24"); sender.removeTag("timemil");
-          sender.addTag("time12");
-          sender.sendMessage("§bClock set to 12-hour");
-        });
-      }
+      });
     });
   } catch (e) {
-    world.sendMessage("§e[Warn] chatSend unavailable — ;c/;f/;24h/etc. need Beta APIs enabled: " + e);
+    world.sendMessage("§e[Warn] chatSend unavailable — ;temp / ;time need Beta APIs enabled: " + e);
   }
 
   // ── Main tick ─────────────────────────────────────────────────────────────────
@@ -496,7 +520,7 @@ world.afterEvents.worldLoad.subscribe(() => {
 
         playerBodyTemp.set(player.id, newBodyTemp);
 
-                // ── Contact heat — direct skin contact (fire/lava), separate from
+        // ── Contact heat — direct skin contact (fire/lava), separate from
         // ambient. Takes the worst single source rather than stacking them.
         // Fire Resistance suppresses fire/lava-sourced heat specifically —
         // your skin isn't actually burning, so it shouldn't feel like it.
@@ -584,11 +608,8 @@ world.afterEvents.worldLoad.subscribe(() => {
           addThirstExhaustion(player, dryness * EXHAUSTION_DRY_AIR);
         }
 
-        // ── Feels Like (heavy-calc copy, unused for display) — kept for
-        // parity/logging; the action bar recomputes its own every tick
-        const feelsLike = calculateFeelsLike(result.newTemp, newHumidity, 0, contactHeat + contactCold);
-
-        const displayC = Math.round(result.newTemp);
+        // (removed: unused heavy-calc copy of feelsLike and displayC —
+        // the action bar recomputes Feels Like itself every tick)
         const bodyC = roundToTenth(newBodyTemp);
 
         // ── Effects & damage ──────────────────────────────────────────────
@@ -602,20 +623,27 @@ world.afterEvents.worldLoad.subscribe(() => {
         savePersistedState(player);
 
       } catch (e) {
-        try {
-          player.onScreenDisplay.setActionBar(`§cError: ${e.message || e}`);
-        } catch { }
+        // Throttled — at most one error report every 5 seconds, so a broken
+        // tick can't flood the action bar or the log every single tick.
+        if (tickCounter % 100 === 0) {
+          console.warn(`[TempGUI] tick error: ${e.message || e}`);
+          try {
+            player.onScreenDisplay.setActionBar(`§cError: ${e.message || e}`);
+          } catch { }
+        }
       }
     }
   }, 1);
 
   // ── Debug stick ───────────────────────────────────────────────────────────────
   // Right-click any block with a stick to print full debug info to chat.
+  // Only works for players tagged with:  /tag @s add tempgui_debug
 
   world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
     if (event.itemStack?.typeId !== "minecraft:stick") return;
     const player = event.player;
-    if (!player || !playerTemp.has(player.id)) return;
+    if (!player || !player.hasTag("tempgui_debug")) return;
+    if (!playerTemp.has(player.id)) return;
 
     const px = Math.floor(player.location.x);
     const py = Math.floor(player.location.y);

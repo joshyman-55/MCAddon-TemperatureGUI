@@ -26,7 +26,7 @@ export function roundToTenth(value) {
     return Math.round(value * 10) / 10;
 }
 
-// Full 24-hour sine curve.
+// Full 24-hour cosine curve.
 // Returns +1 at midday (MC time 6000), -1 at midnight (MC time 18000).
 // Gradual rise from sunrise, gradual fall through sunset into night.
 export function getDailyTempCurve(time) {
@@ -83,7 +83,8 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time, wo
         target = Math.max(biome.min - 10, Math.min(biome.max + 5, target));
     }
 
-    // ── Altitude cooling — applied AFTER clamp so biome floor can't block it ──
+    // ── Altitude cooling — applied after the clamp above (the weather clamp below
+    // re-applies the biome floor, which only matters at extreme altitude) ──────
     const playerY = player.location.y;
     if (!isSpecialDim) {
         const altitudeDrop = Math.max(0, (playerY - 300) * 0.234);
@@ -127,7 +128,14 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time, wo
     }
 
     // ── Water overrides air temperature ───────────────────────────────────────
-    if (inWater) target = getWaterTemp(player);
+    // Ice count is scanned once here and reused for the lerp rate further down.
+    let waterIceCount = 0;
+    if (inWater) {
+        waterIceCount = getNearbyIceCount(player);
+        target = getWaterTemp(player, waterIceCount);
+        // Warm oceans shouldn't default to cold lake water when no sand/coral is nearby
+        if (target === 10 && biomeKey === "warmocean") target = 26;
+    }
 
     // ── Campfire warmth ───────────────────────────────────────────────────────
     const campfire = !inWater ? getCampfireProximity(player) : null;
@@ -183,7 +191,7 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time, wo
         if (biomeDelta >= 20) lerpRate = 0.08;
         if (onFire) lerpRate = 0.20;
         else if (campfire === "on") lerpRate = 0.15;
-        if (inWater && getNearbyIceCount(player) >= 4) lerpRate = 0.15;
+        if (inWater && waterIceCount >= 4) lerpRate = 0.15;
 
         // Airborne — faster since no ground insulation
         const isAirborne = !inWater && !inLava && !nearLava &&
@@ -276,15 +284,17 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time, wo
 // ── Body Temp target ─────────────────────────────────────────────────────────
 // Converts raw Actual Temp (wide ambient scale, e.g. -89 to 200°C) into a
 // physiologically meaningful target on the 32–43°C body temp scale. Deviation
-// from a comfortable ambient baseline (20°C) scales down at 0.1 per degree —
-// every 10°C of ambient swing shifts the body temp target by ~1°C.
+// from a comfortable ambient baseline (20°C) is scaled down: 0.04 per degree on the
+// hot side (every 10°C ≈ 0.4°C of body temp) and 0.07 per degree on the cold side,
+// so severe cold (about -24°C and below) can actually reach frostbite territory.
 
 export function getBodyTempTarget(actualTemp, comfortTemp = 20) {
     const deviation = actualTemp - comfortTemp;
     const DEAD_ZONE = 15;
     if (Math.abs(deviation) <= DEAD_ZONE) return 37;
     const excess = deviation > 0 ? deviation - DEAD_ZONE : deviation + DEAD_ZONE;
-    const bodyShift = excess * 0.04;
+    const slope = deviation < 0 ? 0.07 : 0.04; // colder side shifts Body Temp faster than the hot side
+    const bodyShift = excess * slope;
     return Math.max(32, Math.min(43, 37 + bodyShift));
 }
 
@@ -339,8 +349,8 @@ export function calculateHumidity(currentHumidity, target, lerpRate) {
 // Derived display-time value — NOT persistent state, no Map, recomputed
 // fresh whenever needed. Takes Actual Temp plus humidity/wetness modifiers.
 // humidity: 0–100 (%). wetness: 0–1 (0 = dry, 1 = fully soaked).
-// Placeholder formula until step 5 wires in a real humidity calculation —
-// humidity is currently passed in as a flat 50 from main.js.
+// Humidity is the player's real lerped humidity from main.js; wetness is still
+// always passed as 0 (not implemented yet).
 
 export function calculateFeelsLike(actualTemp, humidity, wetness = 0, contactHeat = 0) {
     let feelsLike = actualTemp;

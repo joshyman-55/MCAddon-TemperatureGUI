@@ -40,8 +40,10 @@ function tryOverlayPulse(player, color, holdTime) {
 export function applyFrostbite(player, bodyC) {
     let coldTime = playerColdTime.get(player.id);
     const { coldBonus } = getArmorTempModifier(player);
-    const coldThreshold = 35.0 - (coldBonus * 0.1);
-    const criticalThreshold = 32.5 - (coldBonus * 0.1);
+    // Floored just above the 32.0 body-temp minimum — otherwise heavy armor pushes the
+    // threshold below what Body Temp can ever reach, making the wearer immune to frostbite.
+    const coldThreshold = Math.max(32.2, 35.0 - (coldBonus * 0.1));
+    const criticalThreshold = Math.max(32.1, 32.5 - (coldBonus * 0.1));
 
     const frostWalkerCap = getFrostWalkerCap(player);
     if (frostWalkerCap !== null && bodyC >= frostWalkerCap) {

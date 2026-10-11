@@ -56,7 +56,7 @@ export const BODY_TEMP_LERP_RATE = 0.02; // slower than ambient lerp — body ca
 export const HUMIDITY_LERP_RATE = 0.03; // similar pace to Body Temp — humidity drifts, doesn't snap
 export const THIRST_MAX = 20; // 20 points = 10 droplet icons
 export const THIRST_EXHAUSTION_THRESHOLD = 4.0; // matches vanilla hunger's threshold
-export const EXHAUSTION_SPRINT = 0.1;     // per tick while sprinting
+export const EXHAUSTION_SPRINT = 0.03;    // per tick while sprinting (~vanilla hunger pacing; was 0.1)
 export const EXHAUSTION_JUMP = 0.2;
 export const EXHAUSTION_SPRINT_JUMP = 0.8;
 export const EXHAUSTION_MINE_BLOCK = 0.005;
@@ -69,11 +69,13 @@ export const SPAWN_TEMP = 18;
 // ── Persistence keys ──────────────────────────────────────────────────────────
 const PERSIST_KEY = "tempgui:persisted";
 
-// ──  Save the 3 persistent fields to a dynamic property ───────────────────────
+// ──  Save the persistent fields to a dynamic property ───────────────────────
 export function savePersistedState(player) {
     try {
         const data = {
             temp: playerTemp.get(player.id) ?? SPAWN_TEMP,
+            bodyTemp: playerBodyTemp.get(player.id) ?? 37,
+            humidity: playerHumidity.get(player.id) ?? 50,
             useFahrenheit: playerUseFahrenheit.get(player.id) ?? false,
             timeFormat: playerTimeFormat.get(player.id) ?? "12",
             lastBiome: playerLastBiome.get(player.id) ?? "plains",
@@ -83,14 +85,16 @@ export function savePersistedState(player) {
     } catch { }
 }
 
-// ── Load the 3 persistent fields from a dynamic property, if present ──────────
+// ── Load the persistent fields from a dynamic property, if present ──────────
 
 export function loadPersistedState(player) { 
     try {
         const raw = player.getDynamicProperty(PERSIST_KEY);
-        if (typeof raw !== "string") return;
+        if (typeof raw !== "string") return false;
         const data = JSON.parse(raw);
         if (typeof data.temp === "number") playerTemp.set(player.id, data.temp);
+        if (typeof data.bodyTemp === "number") playerBodyTemp.set(player.id, Math.max(32, Math.min(43, data.bodyTemp)));
+        if (typeof data.humidity === "number") playerHumidity.set(player.id, Math.max(0, Math.min(100, data.humidity)));
         if (typeof data.useFahrenheit === "boolean") playerUseFahrenheit.set(player.id, data.useFahrenheit);
         if (typeof data.timeFormat === "string") playerTimeFormat.set(player.id, data.timeFormat);
         if (typeof data.lastBiome === "string") playerLastBiome.set(player.id, data.lastBiome);
@@ -122,7 +126,7 @@ export function ensurePlayerState(player) {
     if (!playerOverlayCooldown.has(player.id)) playerOverlayCooldown.set(player.id, 0);
     if (!playerActivityHeat.has(player.id)) playerActivityHeat.set(player.id, 0);
     if (!playerUseFahrenheit.has(player.id)) {
-        // Restore saved preference — persists through death and rejoining
+        // Default °C — the saved preference (if any) is applied by loadPersistedState / tags
         playerUseFahrenheit.set(player.id, false);
     }
     if (!playerTimeFormat.has(player.id)) {

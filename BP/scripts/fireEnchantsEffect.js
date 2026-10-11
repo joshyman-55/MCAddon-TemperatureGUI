@@ -53,16 +53,22 @@ export function registerFireEnchantEffect() {
         const hit = event.getEntityHit()?.entity;
         if (!hit || hit.typeId !== "minecraft:player") return;
 
+        // Is this arrow actually burning? Check the arrow itself first (accurate even if
+        // the shooter switched items or dropped the bow), then fall back to the
+        // shooter's bow enchantment so behaviour never gets worse than before.
+        let isFlaming = false;
         try {
-            const shooter = event.source;
-            if (!shooter) return;
-            const equip = shooter.getComponent("minecraft:equippable");
-            const bow = equip?.getEquipment(EquipmentSlot.Mainhand);
-            if (!bow) return;
-            const enchants = bow.getComponent("minecraft:enchantable");
-            const hasFlame = enchants?.hasEnchantment("flame");
-            if (!hasFlame) return;
-        } catch { return; }
+            isFlaming = event.projectile.getComponent("minecraft:onfire") !== undefined;
+        } catch { }
+        if (!isFlaming) {
+            try {
+                const equip = event.source?.getComponent("minecraft:equippable");
+                const bow = equip?.getEquipment(EquipmentSlot.Mainhand);
+                const enchants = bow?.getComponent("minecraft:enchantable");
+                isFlaming = enchants?.hasEnchantment("flame") === true;
+            } catch { }
+        }
+        if (!isFlaming) return;
 
         const currentBodyTemp = playerBodyTemp.get(hit.id) ?? 37;
         const jumpTarget = FIRE_SPIKE_CAPS.flame_1;
