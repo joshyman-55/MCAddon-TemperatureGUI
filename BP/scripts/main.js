@@ -230,28 +230,41 @@ world.afterEvents.worldLoad.subscribe(() => {
     world.sendMessage("§e[Warn] playerSleepStateChange unavailable: " + e);
   }
 
-  // ── Drinking — water bottles and milk hydrate (+2 thirst, +1 hydration
-  // charge). Other potions (healing, poison, etc.) do not.
+  // ── Drinking — potions/water bottles and milk hydrate (+2 thirst, +1 hydration charge).
+  // WATER_ONLY = false  → any potion hydrates (this is the behaviour that worked in 26.5.1).
+  // WATER_ONLY = true   → bottles that report a real effect (healing, poison...) don't hydrate.
+  //                       Flip it only after checking what your bottles report (debug below).
+  const WATER_ONLY = false;
   world.afterEvents.itemCompleteUse.subscribe((event) => {
     const item = event.itemStack;
     const source = event.source;
-    if (!item || !source || !playerHydration.has(source.id)) return;
+    if (!item || !source) return;
+
+    // What does this potion report? (empty = plain bottle, e.g. water)
+    let effectId = "";
+    if (item.typeId === "minecraft:potion") {
+      try {
+        effectId = String(item.getComponent("minecraft:potion")?.potionEffectType?.id ?? "").toLowerCase();
+      } catch { }
+    }
+
+    // Debug (only for players tagged with /tag @s add tempgui_debug): fires on EVERY finished
+    // item, so if nothing prints when you drink, the event itself isn't firing.
+    try {
+      if (source.hasTag("tempgui_debug")) {
+        source.sendMessage(`§7[DEBUG] itemCompleteUse: ${item.typeId} | effectId: '${effectId}' | thirst: ${playerThirst.get(source.id)}`);
+      }
+    } catch { }
+
+    if (!playerHydration.has(source.id)) return;
 
     let hydrates = false;
-
     if (item.typeId === "minecraft:milk_bucket") {
       hydrates = true;
     } else if (item.typeId === "minecraft:potion") {
-      try {
-        const pot = item.getComponent("minecraft:potion");
-        const id = String(pot?.potionEffectType?.id ?? "").toLowerCase();
-        // source.sendMessage("§7[DEBUG] potion id: " + id); // uncomment once to see the real id string
-        hydrates = id === "water"; // exact match so "water_breathing" doesn't count
-      } catch {
-        hydrates = false; // component unavailable → don't hydrate
-      }
+      hydrates = true;
+      if (WATER_ONLY && effectId !== "" && effectId !== "water") hydrates = false;
     }
-
     if (!hydrates) return;
 
     const charges = playerHydration.get(source.id) ?? 0;
