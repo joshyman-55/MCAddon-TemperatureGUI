@@ -77,6 +77,7 @@ export function getBiomeKey(player, lastBiomeKey = "plains") {
 
         if (id === "minecraft:cherry_grove") return "cherry";
         if (id === "minecraft:pale_garden") return "pale";
+        if (id === "minecraft:dappled_forest") return "dappled";
 
         // ── Forest — includes legacy extreme_hills_plus (windswept forest) ─────
         if (["minecraft:forest", "minecraft:flower_forest",
@@ -98,6 +99,7 @@ export function getBiomeKey(player, lastBiomeKey = "plains") {
         if (id === "minecraft:deep_dark") return "deepdark";
         if (id === "minecraft:dripstone_caves") return "dripstone";
         if (id === "minecraft:lush_caves") return "lush";
+        if (id === "minecraft:sulfur_caves") return "sulfur";
 
         // ── Hills — includes legacy extreme_hills naming. Rocky/temperate
         // highlands only — genuinely snow-capped peaks moved to "frozen" above ──
