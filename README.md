@@ -105,6 +105,17 @@ TemperatureGUI calculates everything in Celsius. Switch the HUD to Fahrenheit wi
 
 ---
 
+## Version Numbering
+
+Versions follow **26.x.y**:
+
+- **x** changes for a **major feature** (e.g. 26.5 → 26.6)
+- **y jumps to .5** for a **minor feature** added to the same version (e.g. 26.5.2 → 26.5.5)
+- **y +1** for **bug fixes only** (e.g. 26.5.5 → 26.5.6); fixes may go past .9 if needed
+- Skipped numbers (like 26.5.3–26.5.4) stay unused
+
+---
+
 ## Version History
 
 ### 26.0 — Core Temp System
@@ -127,9 +138,14 @@ TemperatureGUI calculates everything in Celsius. Switch the HUD to Fahrenheit wi
 - Celsius remained the default and the internal calculation unit
 - No new survival mechanics
 
-**26.1.1 (April 5, 2026):** bug fixes
-**26.1.2 (April 18, 2026):** bug fixes
-**26.1.3 (April 25, 2026):** bug fixes
+**26.1.1 (April 5, 2026)**
+- Bug fixes
+
+**26.1.2 (April 18, 2026)**
+- Bug fixes
+
+**26.1.3 (April 25, 2026)**
+- Bug fixes
 
 ### 26.2 — Armor & Survival Expansion Update
 **26.2 (May 14, 2026)**
@@ -139,7 +155,8 @@ TemperatureGUI calculates everything in Celsius. Switch the HUD to Fahrenheit wi
 - Respawn temperature system: saves temp before death and restores it after a grace period if respawning in the same biome family
 - Hydration system added
 
-**26.2.1 (May 16, 2026):** bug fixes
+**26.2.1 (May 16, 2026)**
+- Bug fixes
 
 ### 26.3 — Combat Update
 **26.3 (May 24, 2026)**
@@ -147,7 +164,8 @@ TemperatureGUI calculates everything in Celsius. Switch the HUD to Fahrenheit wi
 - Fire enchant heat spikes: Fire Aspect I caps at 85 °C (185 °F), Fire Aspect II at 100 °C (212 °F), Flame arrow at 90 °C (194 °F) (instant jump to 70 °C (158 °F)), ghast/small fireballs at 95 °C (203 °F) (instant jump to 75 °C (167 °F)); spikes last 8 ticks and a higher cap overwrites a lower one
 - Unit toggle moved to `/function tempunit_f` and `/function tempunit_c` via tag polling, permanently replacing the 26.1 compass toggle
 
-**26.3.1 (May 30, 2026):** bug fixes
+**26.3.1 (May 30, 2026)**
+- Bug fixes
 
 **26.3.2 (June 19, 2026)**
 - Modified the End dimension temp range to −150 °C (−238 °F) to −90 °C (−130 °F) (default −120 °C (−184 °F))
