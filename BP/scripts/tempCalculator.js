@@ -44,12 +44,22 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time, wo
     const biomeKey = getBiomeKey(player, lastBiomeKey);
     const biome = BIOME_DATA[biomeKey] ?? BIOME_DATA.plains;
     const isSpecialDim = biomeKey === "nether" || biomeKey === "end";
+    const CAVE_BIOMES = ["sulfur", "lush", "dripstone", "deepdark"];
+    let isCave = false;
+    if (CAVE_BIOMES.includes(biomeKey)) {
+        try {
+            const top = player.dimension.getTopmostBlock ({ x: player.location.x, z: player.location.z });
+            isCave = !!top && top.location.y > player.location.y + 1;
+        } catch (e) {
+            isCave = true; // assumes underground if getTopmostBlock fails (e.g. in The End)
+        }
+    }
 
     // ── Base temperature from biome + daily curve ─────────────────────────────
     let target = biome.default;
 
     if (!isSpecialDim) {
-        const tempCurve = getDailyTempCurve(time); // -1 to +1
+        const tempCurve = getDailyTempCurve(time) * (isCave ? 0.25 : 1);
 
         // ── Day intensity — varies each day, rarely hits true extremes ─────────
         const dayNumber = Math.floor(world.getAbsoluteTime() / 24000);
@@ -68,7 +78,7 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time, wo
         uv = Math.max(0, uv - 0.1);
     } else {
         const sunStrength = Math.max(0, getDailyTempCurve(time));
-        if (sunStrength === 0) {
+        if (sunStrength === 0 || isCave) {
             uv = Math.max(0, uv - 0.05);
         } else {
             uv = Math.min(10, uv + sunStrength * 0.03);
@@ -220,8 +230,8 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time, wo
 
                 const BIOME_FAMILIES = {
                     hot: ["desert", "badlands", "savanna", "jungle", "nether"],
-                    warm: ["beach", "warmocean", "swamp", "cherry", "birch", "forest", "darkforest", "mushroom", "lush"],
-                    neutral: ["plains", "ocean", "dripstone", "deepdark"],
+                    warm: ["beach", "warmocean", "swamp", "cherry", "birch", "forest", "darkforest", "mushroom", "lush", "sulfur"],
+                    neutral: ["plains", "ocean", "dripstone", "deepdark", "dappled"],
                     cold: ["taiga", "hills", "pale"],
                     frozen: ["snowy", "frozen", "end"],
                 };
@@ -317,7 +327,7 @@ export function calculateBodyTemp(currentBodyTemp, bodyTempTarget, lerpRate) {
 export function getHumidityTarget(biomeKey, inWater, weather, indoors) {
     if (inWater) return 100;
 
-    const HUMID_BIOMES = ["jungle", "swamp", "mushroom", "lush", "warmocean", "ocean"];
+    const HUMID_BIOMES = ["jungle", "swamp", "mushroom", "lush", "warmocean", "ocean", "sulfur"];
     const DRY_BIOMES = ["desert", "badlands", "savanna", "nether"];
 
     const isDry = DRY_BIOMES.includes(biomeKey);

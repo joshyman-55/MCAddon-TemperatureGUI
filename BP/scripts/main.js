@@ -1,5 +1,5 @@
 // ── main.js ───────────────────────────────────────────────────────────────────
-// 26.5.2 ENTRY POINT — registered in manifest.json as scripts.entry_point.
+// 26.5.5 ENTRY POINT — registered in manifest.json as scripts.entry_point.
 // Modern era rewrite: API 2.x, dynamic properties, native getBiome() only.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ import { registerSnowballEffect } from "./snowballEffect.js";
 import { registerFireEnchantEffect } from "./fireEnchantsEffect.js";
 
 world.afterEvents.worldLoad.subscribe(() => {
-  world.sendMessage("§a[TempGUI] v26.5.2 loaded!");
+  world.sendMessage("§a[TempGUI] v26.5.5 loaded!");
 
   registerSnowballEffect();
   registerFireEnchantEffect();
