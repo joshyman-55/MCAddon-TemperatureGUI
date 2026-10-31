@@ -45,8 +45,15 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time, wo
     const biome = BIOME_DATA[biomeKey] ?? BIOME_DATA.plains;
     const isSpecialDim = biomeKey === "nether" || biomeKey === "end";
     const CAVE_BIOMES = ["sulfur", "lush", "dripstone", "deepdark"];
-    // pick up place
-    const isCave = CAVE_BIOMES.includes(biomeKey);
+    let isCave = false;
+    if (CAVE_BIOMES.includes(biomeKey)) {
+        try {
+            const top = player.dimension.getTopmostBlock ({ x: player.location.x, z: player.location.z });
+            isCave = !!top && top.location.y > player.location.y + 1;
+        } catch (e) {
+            isCave = true; // assumes underground if getTopmostBlock fails (e.g. in The End)
+        }
+    }
 
     // ── Base temperature from biome + daily curve ─────────────────────────────
     let target = biome.default;
@@ -71,7 +78,7 @@ export function calculateTemperature(player, current, uv, lastBiomeKey, time, wo
         uv = Math.max(0, uv - 0.1);
     } else {
         const sunStrength = Math.max(0, getDailyTempCurve(time));
-        if (sunStrength === 0) {
+        if (sunStrength === 0 || isCave) {
             uv = Math.max(0, uv - 0.05);
         } else {
             uv = Math.min(10, uv + sunStrength * 0.03);
