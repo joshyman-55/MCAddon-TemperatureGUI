@@ -105,6 +105,21 @@ TemperatureGUI calculates everything in Celsius. Switch the HUD to Fahrenheit wi
 
 ---
 
+## HUD Color Legend
+
+The temperature on the action bar changes color with how hot or cold it is.
+
+| Color | °C | °F | Meaning |
+|---|---|---|---|
+| 🟪 Purple | 0 and below | 32 and below | Freezing |
+| 🟦 Aqua | above 0 to 9 | 32–48 | Very cold |
+| 🟩 Green | above 9 to 15 | 48–59 | Cool |
+| 🟨 Yellow | above 15 to 25 | 59–77 | Warm |
+| 🟧 Gold | above 25 to 35 | 77–95 | Hot |
+| 🟥 Red | above 35 | above 95 | Dangerous |
+
+---
+
 ## Version Numbering
 
 Versions follow **26.x.y**:
