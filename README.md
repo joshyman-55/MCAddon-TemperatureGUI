@@ -112,10 +112,10 @@ The temperature on the action bar changes color with how hot or cold it is.
 | Color | °C | °F | Meaning |
 |---|---|---|---|
 | 🟪 Purple | ≤ 0 | ≤ 32 | Freezing |
-| 🟦 Aqua | 1–9 | 34–48 | Very cold |
-| 🟩 Green | 10–15 | 50–59 | Cool |
-| 🟨 Yellow | 16–25 | 61–77 | Warm |
-| 🟧 Gold | 26–35 | 79–95 | Hot |
+| 🟦 Aqua | 1–9 | 33–48 | Very cold |
+| 🟩 Green | 10–15 | 49–59 | Cool |
+| 🟨 Yellow | 16–25 | 60–77 | Warm |
+| 🟧 Gold | 26–35 | 78–95 | Hot |
 | 🟥 Red | > 35 | > 95 | Dangerous |
 
 ---
