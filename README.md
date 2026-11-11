@@ -84,9 +84,9 @@ Type these in chat. **Beta APIs must be enabled** in the world for chat commands
 
 ---
 
-## Celsius ↔ Fahrenheit
+## °C ↔ °F
 
-TemperatureGUI calculates everything in Celsius. Switch the HUD to Fahrenheit with `;temp fahrenheit`.
+TemperatureGUI calculates everything in °C. Switch the HUD to °F with `;temp fahrenheit`.
 
 - **°F = °C × 9/5 + 32**
 - **°C = (°F − 32) × 5/9**
@@ -111,12 +111,12 @@ The temperature on the action bar changes color with how hot or cold it is.
 
 | Color | °C | °F | Meaning |
 |---|---|---|---|
-| 🟪 Purple | 0 and below | 32 and below | Freezing |
-| 🟦 Aqua | above 0 to 9 | 32–48 | Very cold |
-| 🟩 Green | above 9 to 15 | 48–59 | Cool |
-| 🟨 Yellow | above 15 to 25 | 59–77 | Warm |
-| 🟧 Gold | above 25 to 35 | 77–95 | Hot |
-| 🟥 Red | above 35 | above 95 | Dangerous |
+| 🟪 Purple | ≤ 0 | ≤ 32 | Freezing |
+| 🟦 Aqua | 1–9 | 34–48 | Very cold |
+| 🟩 Green | 10–15 | 50–59 | Cool |
+| 🟨 Yellow | 16–25 | 61–77 | Warm |
+| 🟧 Gold | 26–35 | 79–95 | Hot |
+| 🟥 Red | > 35 | > 95 | Dangerous |
 
 ---
 
@@ -135,11 +135,11 @@ Versions follow **26.x.y**:
 
 ### 26.0 — Core Temp System
 **26.0 (March 28, 2026)**
-- Biome-based temperature ranges: each biome has a default, min and max temp in Celsius
+- Biome-based temperature ranges: each biome has a default, min and max temp in °C
 - Day/night sine curve temperature variation, peaking at MC time 6000 and lowest at 18000
 - Block-vote biome fallback: scans nearby blocks to guess the biome when detection fails
 - Action bar HUD showing temperature and in-game time
-- Celsius-only display
+- °C-only display
 - Frostbite system: accumulates cold exposure, applies Slowness and freeze damage (below −9 °C / 15 °F)
 - Heatstroke system: accumulates heat exposure, applies Nausea and Weakness (above 42 °C / 108 °F)
 - Player state stored in JavaScript Maps per player ID
@@ -149,8 +149,8 @@ Versions follow **26.x.y**:
 
 ### 26.1 — Unit System Update
 **26.1 (April 4, 2026)**
-- Added Fahrenheit as an optional display unit, triggered by using a compass item
-- Celsius remained the default and the internal calculation unit
+- Added °F as an optional display unit, triggered by using a compass item
+- °C remained the default and the internal calculation unit
 - No new survival mechanics
 
 **26.1.1 (April 5, 2026)**
