@@ -242,3 +242,27 @@ Versions follow **26.x.y**:
 - Warm oceans no longer default to cold-lake water temperature
 - Player data is fully cleaned up when a player leaves
 - Script errors are reported at most once every 5 seconds instead of flooding the screen
+
+---
+
+## Copyright & License
+
+© 2026 Joshyman55. All rights reserved.
+
+TemperatureGUI, including its scripts, behavior pack, resource pack, textures and documentation, is the property of Joshyman55.
+
+**You may:**
+- Download the official release only from Joshyman55's official sources
+- Install and play it in your own worlds and on servers you play on
+
+**You may not, without explicit written permission from Joshyman55:**
+- Copy, reuse or extract any part of the code or assets
+- Modify, edit or create derivative works of the addon
+- Re-upload, redistribute, mirror or share the files
+- Sell the addon or include it in paid content, bundles or modpacks
+- Claim the addon or any part of it as your own
+
+To request permission, contact Joshyman55 first. Permission is only valid if given in writing.
+
+*Minecraft is a trademark of Mojang Synergies AB. TemperatureGUI is not an official Minecraft product and is not approved by or associated with Mojang or Microsoft.*
+
