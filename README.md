@@ -111,12 +111,12 @@ The temperature on the action bar changes color with how hot or cold it is.
 
 | Color | °C | °F | Meaning |
 |---|---|---|---|
-| 🟪 Purple | ≤ 0 | ≤ 32 | Freezing |
-| 🟦 Aqua | 1–9 | 33–48 | Very cold |
-| 🟩 Green | 10–15 | 49–59 | Cool |
-| 🟨 Yellow | 16–25 | 60–77 | Warm |
-| 🟧 Gold | 26–35 | 78–95 | Hot |
-| 🟥 Red | > 35 | > 95 | Dangerous |
+| $\colorbox{#FF55FF}{\color{black}\textsf{ Purple }}$ | ≤ 0 | ≤ 32 | Freezing |
+| $\colorbox{#55FFFF}{\color{black}\textsf{ Aqua }}$ | 1–9 | 33–48 | Very cold |
+| $\colorbox{#55FF55}{\color{black}\textsf{ Green }}$ | 10–15 | 49–59 | Cool |
+| $\colorbox{#FFFF55}{\color{black}\textsf{ Yellow }}$ | 16–25 | 60–77 | Warm |
+| $\colorbox{#FFAA00}{\color{black}\textsf{ Orange }}$ | 26–35 | 78–95 | Hot |
+| $\colorbox{#FF5555}{\color{black}\textsf{ Red }}$ | > 35 | > 95 | Dangerous |
 
 ---
 
@@ -128,6 +128,8 @@ Versions follow **26.x.y**:
 - **y jumps to .5** for a **minor feature** added to the same version (e.g. 26.5.2 → 26.5.5)
 - **y +1** for **bug fixes only** (e.g. 26.5.5 → 26.5.6); fixes may go past .9 if needed
 - Skipped numbers (like 26.5.3–26.5.4) stay unused
+
+**This scheme applies from 26.5 onward.** Earlier releases, including 26.5.1 and 26.5.2, were numbered before the scheme was set, so some of them include new features under a "+1" number.
 
 ---
 
