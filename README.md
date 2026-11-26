@@ -248,6 +248,10 @@ Versions follow **26.x.y**:
 - Player data is fully cleaned up when a player leaves
 - Script errors are reported at most once every 5 seconds instead of flooding the screen
 
+### 26.6 — In Development
+
+Work on the next major update has started. Features and release notes will be posted here when 26.6 is released. Until then, 26.5.5 is the current version.
+
 ---
 
 ## Copyright & License
