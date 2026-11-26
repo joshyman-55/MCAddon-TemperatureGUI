@@ -151,6 +151,10 @@
     border-radius: 8px; width: 44px; min-height: 44px; font: inherit; font-size: 1.05rem; cursor: pointer; }
   .limit { color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-line);
     border-radius: 8px; padding: 6px 10px; font-size: .88rem; margin: 10px 0 0; }
+  .warn { color: var(--warn-text); font-size: .85rem; margin: 4px 0 0; }
+  svg.chart .actual { stroke: #e8734a; stroke-width: 2.5; fill: none; }
+  svg.chart .start { fill: #e8734a; stroke: var(--surface); stroke-width: 2; }
+  .key { display: inline-block; width: 14px; height: 3px; vertical-align: 3px; margin-right: 5px; border-radius: 2px; }
   [hidden] { display: none !important; }
   @media (max-width: 480px) { .headline .big { font-size: 1.7rem; } }
 </style>
@@ -173,6 +177,12 @@
         <div>
           <label for="biome">Biome</label>
           <select id="biome"></select>
+        </div>
+        <div>
+          <label for="startTemp">Start temp (°C)</label>
+          <input type="text" id="startTemp" inputmode="decimal" autocomplete="off">
+          <p class="note" id="startHint"></p>
+          <p class="warn" id="startMsg" role="status" hidden></p>
         </div>
         <div>
           <label for="unit">Show results in</label>
@@ -202,6 +212,7 @@
         <div>
           <div class="row"><label for="uv" style="margin:0">UV buildup</label><span class="val" id="uvOut"></span></div>
           <input type="range" id="uv" min="0" max="10" step="0.5" value="0">
+          <p class="note" id="uvNote">Builds in sunlight (up to 10). Underground it stops building and fades by 0.05 each second.</p>
         </div>
         <div>
           <div class="row"><label for="alt" style="margin:0">Height (Y)</label><span class="val" id="altOut"></span></div>
@@ -235,9 +246,10 @@
       <div class="results">
         <div class="stat"><div class="k">Actual Temp (°C)</div><div class="v" id="rC"></div><div class="s">what the HUD heads toward</div></div>
         <div class="stat"><div class="k">Actual Temp (°F)</div><div class="v" id="rF"></div><div class="s">&nbsp;</div></div>
+        <div class="stat"><div class="k">From start temp</div><div class="v" id="rS"></div><div class="s" id="rSs"></div></div>
         <div class="stat"><div class="k">Body Temp target</div><div class="v" id="rB"></div><div class="s" id="rBs"></div></div>
       </div>
-      <p class="note">Doesn't include water, campfire, lava, magma or snow/ice contact, and Body Temp ignores armor. The real temperature moves toward this value gradually.</p>
+      <p class="note">Doesn't include water, campfire, lava, magma or snow/ice contact, and Body Temp ignores armor. Actual Temp moves from your start temp toward this value at the addon's ground rate (2.5% of the gap each second).</p>
     </div>
 
     <div class="card">
@@ -338,7 +350,8 @@ function targetTemp(key, o) {
     t = curve >= 0
       ? b.def + curve * (b.max - b.def) * o.di
       : b.def + curve * (b.def - b.min) * o.di;
-    const uv = cave ? 0 : o.uv;
+    // In caves UV stops building and fades 0.05/s, but whatever is left still counts (like the addon)
+    const uv = o.uv;
     t += b.def <= 0 ? uv * 0.2 : key === "beach" ? uv * 0.4 : uv * 0.5;
     t = clamp(t, b.min - 10, b.max + 5);
     t = Math.max(-89.2, t - Math.max(0, (o.y - 300) * 0.234));
@@ -346,15 +359,16 @@ function targetTemp(key, o) {
     if (o.weather === "thunder") t -= 10;
     else if (o.weather === "rain") t -= b.def <= 0 ? 14 : 6;
     t = clamp(t, b.min - 10, b.max + 5);
-
-    if (o.indoors) {
-      const comfort = 22;
-      const it = b.def > comfort ? Math.max(comfort, b.def * 0.75) : Math.min(comfort, b.def * 0.5 + comfort * 0.5);
-      const diff = it - t;
-      t += diff * Math.min(0.6, Math.abs(diff) / 60 + 0.2);
-    }
-    t = Math.min(b.max + 5, t);
   }
+
+  // Indoors and the final cap run in every dimension in tempCalculator.js, Nether and End included
+  if (o.indoors) {
+    const comfort = 22;
+    const it = b.def > comfort ? Math.max(comfort, b.def * 0.75) : Math.min(comfort, b.def * 0.5 + comfort * 0.5);
+    const diff = it - t;
+    t += diff * Math.min(0.6, Math.abs(diff) / 60 + 0.2);
+  }
+  t = Math.min(b.max + 5, t);
   return clamp(t, -273, 200);
 }
 
@@ -376,12 +390,12 @@ function bodyLabel(b) {
 
 /* HUD color buckets (mirrors getTempColor) */
 function hudColor(c) {
-  if (c <= 0)  return { name: "Purple", hex: "#d46bf0" };
-  if (c <= 9)  return { name: "Aqua",   hex: "#4fd3e6" };
-  if (c <= 15) return { name: "Green",  hex: "#55d860" };
-  if (c <= 25) return { name: "Yellow", hex: "#f2e04a" };
-  if (c <= 35) return { name: "Gold",   hex: "#f0a020" };
-  return { name: "Red", hex: "#f05450" };
+  if (c <= 0)  return { name: "Purple", hex: "#FF55FF" }; // §d
+  if (c <= 9)  return { name: "Aqua",   hex: "#55FFFF" }; // §b
+  if (c <= 15) return { name: "Green",  hex: "#55FF55" }; // §a
+  if (c <= 25) return { name: "Yellow", hex: "#FFFF55" }; // §e
+  if (c <= 35) return { name: "Orange", hex: "#FFAA00" }; // §6
+  return { name: "Red", hex: "#FF5555" };                 // §c
 }
 
 /* Formatting. The 26.5.5 HUD shows whole degrees in both °C and °F */
@@ -434,13 +448,100 @@ function dispUnit(c) {
 }
 function unitLabel() { return $("unit").value === "F" ? "°F" : "°C"; }
 
+/* ── Start temp: limited to the selected biome's min–max ─────────────────── */
+const LERP = 0.025;      // ground lerp rate in tempCalculator.js, applied once per second (20 ticks)
+const STEP = 20;         // ticks per heavy-calc step
+let startC = null;       // last valid start temp (°C)
+
+function startRange(key) { const b = BIOMES[key]; return [b.min, b.max]; }
+
+// Actual Temp from startC, beginning at o.time and running to the end of the chart (6 AM)
+function simulateActual(key, o) {
+  const pts = [];
+  let a = startC;
+  for (let t = o.time; t <= 24000; t += STEP) {
+    pts.push([t, a]);
+    a += (targetTemp(key, { ...o, time: t % 24000 }) - a) * LERP;
+  }
+  return pts;
+}
+// Seconds until Actual Temp is within 0.5 °C of the target (null if not within a day)
+function secondsToTarget(key, o) {
+  let a = startC;
+  for (let i = 0; i < 1200; i++) {
+    const tgt = targetTemp(key, { ...o, time: (o.time + i * STEP) % 24000 });
+    if (Math.abs(tgt - a) <= 0.5) return i;
+    a += (tgt - a) * LERP;
+  }
+  return null;
+}
+function fmtDuration(sec) {
+  if (sec === 0) return "already there";
+  if (sec < 60) return "about " + sec + " s to reach target";
+  const m = Math.floor(sec / 60), r = sec % 60;
+  return "about " + m + " min" + (r ? " " + r + " s" : "") + " to reach target";
+}
+
+function refreshStartHint(key) {
+  const [lo, hi] = startRange(key);
+  $("startHint").textContent =
+    `${BIOMES[key].name}: ${minus(lo)} to ${minus(hi)} °C (${minus(Math.round(toF(lo)))} to ${minus(Math.round(toF(hi)))} °F) · up to 1 decimal`;
+}
+// On biome change: keep the start temp if it fits the new range, otherwise use the biome default
+function syncStartToBiome(key) {
+  const [lo, hi] = startRange(key);
+  if (startC === null || startC < lo || startC > hi) startC = BIOMES[key].def;
+  $("startTemp").value = String(startC);
+  refreshStartHint(key);
+}
+
+let startMsgTimer;
+function showStartMsg(msg) {
+  const el = $("startMsg");
+  el.textContent = msg; el.hidden = false;
+  clearTimeout(startMsgTimer);
+  startMsgTimer = setTimeout(() => { el.hidden = true; }, 3000);
+}
+// While typing: strip letters, 1 decimal max. Only in-range values update the result
+// (so a number like 45 can still be typed one digit at a time in a 38–56 biome).
+$("startTemp").addEventListener("input", () => {
+  const input = $("startTemp");
+  const raw = input.value;
+  let v = raw.replace(/[^0-9.\-]/g, "");
+  v = (v.startsWith("-") ? "-" : "") + v.replace(/-/g, "");
+  const [i, ...rest] = v.split(".");
+  v = rest.length ? i + "." + rest.join("").slice(0, 1) : i;
+  input.value = v;
+  if (v !== raw) showStartMsg("Numbers only (up to 1 decimal place).");
+  const n = parseFloat(v);
+  const [lo, hi] = startRange($("biome").value);
+  if (!isNaN(n) && n >= lo && n <= hi) { startC = n; renderBiome(); }
+});
+// Leaving the box: anything empty or outside the biome range goes back to the value it had
+// before this edit (not a half-typed number like the 9 in 99)
+let focusC = null;
+$("startTemp").addEventListener("focus", () => { focusC = startC; });
+$("startTemp").addEventListener("blur", () => {
+  const input = $("startTemp");
+  const n = parseFloat(input.value);
+  const [lo, hi] = startRange($("biome").value);
+  if (isNaN(n) || n < lo || n > hi) {
+    if (!isNaN(n)) showStartMsg(`Out of range for ${BIOMES[$("biome").value].name}: ${minus(lo)} to ${minus(hi)} °C.`);
+    if (focusC !== null) startC = focusC;
+    input.value = String(startC);
+    renderBiome();
+  }
+});
+$("startTemp").addEventListener("keydown", e => { if (e.key === "Enter") $("startTemp").blur(); });
+
 function drawChart(key, o) {
   const svg = $("chart");
   const W = 640, H = 260, L = 46, R = 14, T = 14, B = 34;
   const pts = [];
   for (let t = 0; t < 24000; t += 200) pts.push([t, targetTemp(key, { ...o, time: t })]);
   const b = BIOMES[key];
-  const vals = pts.map(p => p[1]).concat([b.def]);
+  const act = simulateActual(key, o);
+  const vals = pts.map(p => p[1]).concat([b.def], act.map(p => p[1]));
   let lo = Math.min(...vals), hi = Math.max(...vals);
   if (hi - lo < 4) { lo -= 2; hi += 2; }
   const pad = (hi - lo) * 0.12; lo -= pad; hi += pad;
@@ -461,12 +562,15 @@ function drawChart(key, o) {
   g += `<line class="guide" x1="${L}" x2="${W - R}" y1="${y(b.def)}" y2="${y(b.def)}"/>`;
   g += `<text x="${W - R}" y="${y(b.def) - 5}" text-anchor="end">biome default</text>`;
   g += `<polyline class="curve" points="${pts.map(p => x(p[0]).toFixed(1) + "," + y(p[1]).toFixed(1)).join(" ")}"/>`;
+  g += `<polyline class="actual" points="${act.map(p => x(p[0]).toFixed(1) + "," + y(p[1]).toFixed(1)).join(" ")}"/>`;
   const cur = targetTemp(key, o);
   g += `<circle class="now" r="6" cx="${x(o.time)}" cy="${y(cur)}"/>`;
+  g += `<circle class="start" r="5" cx="${x(o.time)}" cy="${y(startC)}"/>`;
   svg.innerHTML = g;
-  $("chartNote").textContent =
-    `Dot = selected time. Dashed line = biome default (${dispUnit(b.def)} ${unitLabel()}). ` +
-    `Vertical axis in ${unitLabel()}.`;
+  $("chartNote").innerHTML =
+    `<span class="key" style="background:var(--curve)"></span>Target &nbsp; ` +
+    `<span class="key" style="background:#e8734a"></span>Actual Temp from your start temp (starts at the selected time). ` +
+    `Dashed line = biome default (${dispUnit(b.def)} ${unitLabel()}). Vertical axis in ${unitLabel()}.`;
 }
 
 function renderBiome() {
@@ -478,8 +582,7 @@ function renderBiome() {
   $("diOut").textContent = o.di.toFixed(2);
   $("uvOut").textContent = o.uv.toFixed(1);
   $("altOut").textContent = "Y " + o.y;
-  $("uv").disabled = !!b.special || (b.cave && o.cave);
-  $("indoors").disabled = !!b.special;
+  $("uv").disabled = !!b.special;
   $("weather").disabled = !!b.special;
   $("di").disabled = !!b.special;
 
@@ -490,11 +593,15 @@ function renderBiome() {
   $("mainChip").innerHTML = `<span class="dot" style="background:${col.hex}"></span>HUD color: ${col.name}`;
   $("rC").textContent = numD(c, 0);
   $("rF").textContent = numD(toF(c), 0);
+  $("rS").textContent = dispUnit(startC) + " " + unitLabel();
+  const secs = secondsToTarget(key, o);
+  $("rSs").textContent = secs === null ? "doesn't settle within a day" : fmtDuration(secs);
   $("rB").textContent = numD(body, 1) + " °C";
   $("rBs").textContent = bodyLabel(body);
   drawChart(key, o);
 }
 
+$("biome").addEventListener("change", () => syncStartToBiome($("biome").value));
 ["biome", "unit", "time", "di", "uv", "alt", "weather", "indoors", "cave"].forEach(id => {
   $(id).addEventListener("input", renderBiome);
   $(id).addEventListener("change", renderBiome);
@@ -609,6 +716,7 @@ TABS.forEach(n => {
   });
 });
 
+syncStartToBiome($("biome").value);
 renderBiome();
 setFromC(20);
 </script>
