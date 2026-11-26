@@ -27,15 +27,18 @@ TemperatureGUI adds a dynamic temperature and survival system to Minecraft Bedro
 
 ## Commands
 
-Type these in chat. **Beta APIs must be enabled** in the world for chat commands to work.
+There are two ways to run each command. Both do the same thing.
 
-| Command | Effect |
-|---|---|
-| `;temp celsius` | Show temperatures in °C |
-| `;temp fahrenheit` | Show temperatures in °F |
-| `;time 12h` | 12-hour clock (3:45 PM) |
-| `;time 24h` | 24-hour clock (15:45) |
-| `;time military` | Military clock (09:05) |
+| Chat command | Function command | Effect |
+|---|---|---|
+| `;temp celsius` | `/function temp/celsius` | Show temperatures in °C |
+| `;temp fahrenheit` | `/function temp/fahrenheit` | Show temperatures in °F |
+| `;time 12h` | `/function time/12hr` | 12-hour clock (3:45 PM) |
+| `;time 24h` | `/function time/24hr` | 24-hour clock (15:45) |
+| `;time military` | `/function time/military` | Military clock (09:05) |
+
+- **Chat commands** need **Beta APIs** turned on in the world, because the chat event (`chatSend`) is still a beta feature.
+- **Function commands** work without Beta APIs but need **cheats** turned on. They're the stand-in until `chatSend` reaches the stable API.
 
 **Debug (for testing):** `/tag @s add tempgui_debug`, then use a **stick** on a block to print debug info, including the raw biome ID.
 
@@ -45,7 +48,7 @@ Type these in chat. **Beta APIs must be enabled** in the world for chat commands
 
 1. Double-click `TemperatureGUI_26.5.5.mcaddon`. Minecraft imports both packs.
 2. In your world settings, turn on the **Temperature System BP** and **Temperature System RP**.
-3. Under **Experiments**, turn on **Beta APIs** (needed for `;temp` / `;time`).
+3. Under **Experiments**, turn on **Beta APIs** for the `;temp` / `;time` chat commands, or turn on **cheats** to use the `/function` commands instead.
 
 **Requirements:** Minecraft Bedrock Edition 1.21.0 or newer.
 
@@ -211,10 +214,10 @@ Versions follow **26.x.y**:
 - Thirst bar JSON UI in progress: icon assets placed and data pipeline wired, currently blocked on a "Type not specified" error in `hud_screen.json`
 - Frost/heat screen overlays, Vector3 migration and activity-based heat generation not yet started
 - Starts the modern era; does not replace 26.4
-- Unit switch changed from `/function tempunit_c` / `tempunit_f` to `/function temperature/celsius` / `temperature/fahrenheit`
+- Unit switch changed from `/function tempunit_c` / `tempunit_f` to `/function temp/celsius` / `temp/fahrenheit`
 
 **26.5.1 (September 19, 2026)**
-- Command toggle moved from `/function` to chat commands (waiting for the stable API release)
+- Added chat commands for the unit toggle; `/function` commands stay as the stand-in until `chatSend` reaches the stable API
 - Introduced 24-hour and military time
 
 **26.5.2 (October 10, 2026)**
@@ -267,4 +270,3 @@ TemperatureGUI, including its scripts, behavior pack, resource pack, textures an
 To request permission, contact Joshyman55 first. Permission is only valid if given in writing.
 
 *Minecraft is a trademark of Mojang Synergies AB. TemperatureGUI is not an official Minecraft product and is not approved by or associated with Mojang or Microsoft.*
-
